@@ -1,12 +1,84 @@
 import Phaser from 'phaser';
 
-let player;
-let ball;
-let facing = { x: 0, y: 1 };
-let spaceKey;
-let cursors;
 
-const config = {
+type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
+
+class MainScene extends Phaser.Scene {
+  // class fields — declared here, assigned in create()
+  private player!: PhysicsCircle;
+  private ball!: PhysicsCircle;
+  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private spaceKey!: Phaser.Input.Keyboard.Key;
+  private facing = { x: 0, y: 1 };
+
+constructor() {
+  super('MainScene'); // scene key — Phaser identifies scenes by string key
+}
+
+preload() {
+  // empty for now, same as before
+}
+
+create() {
+  this.player = this.add.circle(400, 300, 15, 0xffffff) as PhysicsCircle;
+  this.physics.add.existing(this.player);
+  this.player.body.setCircle(15);
+  this.player.body.setCollideWorldBounds(true);
+
+  this.ball = this.add.circle(400, 300, 10, 0x000000) as PhysicsCircle;
+  this.physics.add.existing(this.ball);
+  this.ball.body.setCircle(10);
+  this.ball.body.setCollideWorldBounds(true);
+  this.ball.body.setBounce(1);
+  this.ball.body.setDamping(true);
+  this.ball.body.setDrag(0.5);
+
+  this.cursors = this.input.keyboard!.createCursorKeys();
+  this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+
+  this.physics.add.collider(this.player, this.ball);
+}
+
+update() {
+  // same body as your current update(), moved in here.
+  if (this.cursors.left.isDown) {
+    this.player.body.setVelocityX(-200);
+    this.facing.x = -1;
+  } else if (this.cursors.right.isDown) {
+    this.player.body.setVelocityX(200);
+    this.facing.x = 1;
+  } else {
+    this.player.body.setVelocityX(0);
+  }
+
+  if (this.cursors.up.isDown) {
+    this.player.body.setVelocityY(-200);
+    this.facing.y = -1;
+  } else if (this.cursors.down.isDown) {
+    this.player.body.setVelocityY(200);
+    this.facing.y = 1;
+  } else {
+    this.player.body.setVelocityY(0);
+  }
+
+  if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.ball.x, this.ball.y);
+    const kickRange = 40;
+
+    if (dist < kickRange) {
+      const kickSpeed = 400;
+
+      const magnitude = Math.sqrt(this.facing.x ** 2 + this.facing.y ** 2);
+      const normalizedX = this.facing.x / magnitude;
+      const normalizedY = this.facing.y / magnitude;
+
+      this.ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
+    }
+  }
+}
+}
+
+const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: 800,
   height: 600,
@@ -14,80 +86,11 @@ const config = {
   physics: {
     default: 'arcade',
     arcade: {
-      gravity: { y: 0 },
+      gravity: { x: 0, y: 0 }, // fixes the Vector2Like error
       debug: false
     }
   },
-  scene: {
-    preload: preload,
-    create: create,
-    update: update
-  }
-}
+  scene: MainScene // pass the class itself, not an object of functions
+};
 
-const game = new Phaser.Game(config);
-
-function preload() {
-
-}
-
-function create() {
-  this.add.rectangle(400, 300, 800, 600, 0x2e7d32);
-
-  player = this.add.circle(400, 300, 15, 0xffffff);
-  this.physics.add.existing(player);
-  player.body.setCircle(15);
-  player.body.setCollideWorldBounds(true);
-
-  ball = this.add.circle(400, 300, 10, 0x000000);
-  this.physics.add.existing(ball);
-  ball.body.setCircle(10);
-  ball.body.setCollideWorldBounds(true);
-  ball.body.setBounce(1);
-  ball.body.setDamping(true);
-  ball.body.setDrag(0.5);
-
-  cursors = this.input.keyboard.createCursorKeys();
-  spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-
-  this.physics.add.collider(player, ball);
-}
-
-function update() {
-
-  if (cursors.left.isDown) {
-    player.body.setVelocityX(-200);
-    facing.x = -1;
-  } else if (cursors.right.isDown) {
-    player.body.setVelocityX(200);
-    facing.x = 1;
-  } else {
-    player.body.setVelocityX(0);
-  }
-
-  if (cursors.up.isDown) {
-    player.body.setVelocityY(-200);
-    facing.y = -1;
-  } else if (cursors.down.isDown) {
-    player.body.setVelocityY(200);
-    facing.y = 1;
-  } else {
-    player.body.setVelocityY(0);
-  }
-
-  if (Phaser.Input.Keyboard.JustDown(spaceKey)) {
-    const dist = Phaser.Math.Distance.Between(player.x, player.y, ball.x, ball.y);
-    const kickRange = 40;
-
-    if (dist < kickRange) {
-      const kickSpeed = 400;
-
-      const magnitude = Math.sqrt(facing.x ** 2 + facing.y ** 2);
-      const normalizedX = facing.x / magnitude;
-      const normalizedY = facing.y / magnitude;
-
-      ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
-    }
-  }
-}
-
+new Phaser.Game(config); // not assigning to an unused variable fixes TS6133
