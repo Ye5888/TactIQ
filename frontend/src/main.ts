@@ -20,6 +20,8 @@ preload() {
 }
 
 create() {
+  this.add.rectangle(400, 300, 800, 600, 0x2e7d32);
+
   this.player = this.add.circle(400, 300, 15, 0xffffff) as PhysicsCircle;
   this.physics.add.existing(this.player);
   this.player.body.setCircle(15);
