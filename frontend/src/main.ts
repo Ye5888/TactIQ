@@ -20,14 +20,23 @@ preload() {
 }
 
 create() {
-  this.add.rectangle(400, 300, 800, 600, 0x2e7d32);
+  // Draw the pitch background — sized/centered to the new 1200x600 world (was 800x600)
+  this.add.rectangle(600, 300, 1200, 600, 0x2e7d32);
 
-  this.player = this.add.circle(400, 300, 15, 0xffffff) as PhysicsCircle;
+  // Physics objects (player, ball) can't move past these bounds
+  this.physics.world.setBounds(0, 0, 1200, 600);
+
+  // Camera can't scroll past these bounds either — keeps the view locked to the pitch
+  this.cameras.main.setBounds(0, 0, 1200, 600);
+
+  // Create the player: white circle with a physics body, spawned at the new world center
+  this.player = this.add.circle(600, 300, 15, 0xffffff) as PhysicsCircle;
   this.physics.add.existing(this.player);
   this.player.body.setCircle(15);
   this.player.body.setCollideWorldBounds(true);
 
-  this.ball = this.add.circle(400, 300, 10, 0x000000) as PhysicsCircle;
+  // Create the ball: black circle with a bouncy, drag-slowed physics body
+  this.ball = this.add.circle(600, 300, 10, 0x000000) as PhysicsCircle;
   this.physics.add.existing(this.ball);
   this.ball.body.setCircle(10);
   this.ball.body.setCollideWorldBounds(true);
@@ -35,10 +44,15 @@ create() {
   this.ball.body.setDamping(true);
   this.ball.body.setDrag(0.5);
 
+  // Set up input: arrow keys for movement, spacebar for kicking
   this.cursors = this.input.keyboard!.createCursorKeys();
   this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
+  // Player and ball physically collide with each other
   this.physics.add.collider(this.player, this.ball);
+
+  // Camera follows the ball, easing toward it each frame instead of snapping instantly
+  this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
 }
 
 update() {
