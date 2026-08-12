@@ -45,7 +45,7 @@ class MainScene extends Phaser.Scene {
     this.ball = this.add.circle(600, 300, 10, 0x000000) as PhysicsCircle;
     this.physics.add.existing(this.ball);
     this.ball.body.setCircle(10);
-    this.ball.body.setCollideWorldBounds(true);
+    this.ball.body.setCollideWorldBounds(false);
     this.ball.body.setBounce(1);
     this.ball.body.setDamping(true);
     this.ball.body.setDrag(0.5);
