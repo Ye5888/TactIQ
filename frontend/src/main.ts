@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
+import { Player } from './entities/Player';
 
 
 type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
 
 class MainScene extends Phaser.Scene {
   // class fields — declared here, assigned in create()
-  private player!: PhysicsCircle;
+  private player!: Player;
   private ball!: PhysicsCircle;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
@@ -55,10 +56,7 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 1200, 600);
 
     // Create the player: white circle with a physics body, spawned at the new world center
-    this.player = this.add.circle(600, 300, 15, 0xffffff) as PhysicsCircle;
-    this.physics.add.existing(this.player);
-    this.player.body.setCircle(15);
-    this.player.body.setCollideWorldBounds(true);
+    this.player = new Player(this, 600, 300, 0xffffff);
 
     // Create the ball: black circle with a bouncy, drag-slowed physics body
     this.ball = this.add.circle(600, 300, 10, 0x000000) as PhysicsCircle;
