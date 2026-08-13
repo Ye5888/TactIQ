@@ -79,14 +79,14 @@ class MainScene extends Phaser.Scene {
     let resultText: string;
 
     if (this.score.leftNet > this.score.rightNet) {
-      resultText = 'You Win!';
-    } else if (this.score.rightNet > this.score.leftNet) {
       resultText = 'You Lose!';
+    } else if (this.score.rightNet > this.score.leftNet) {
+      resultText = 'You Win!';
     } else {
       resultText = 'Draw!';
     }
 
-    const banner = this.add.text(600, 300, `${resultText}\nFinal Score: ${this.score.leftNet} - ${this.score.rightNet}`, {
+    const banner = this.add.text(400, 300, `${resultText}\nFinal Score: ${this.score.leftNet} - ${this.score.rightNet}`, {
       fontSize: '48px',
       color: '#ffffff',
       align: 'center',
@@ -154,11 +154,11 @@ class MainScene extends Phaser.Scene {
     });
 
     // Create the score text, horizontally centered near top
-    this.scoreText = this.add.text(600, 20, '0 - 0', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
+    this.scoreText = this.add.text(400, 20, '0 - 0', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
     this.scoreText.setScrollFactor(0);
 
     // Create timer text, similar to the score text
-    this.timerText = this.add.text(600, 60, '2:00', { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5, 0);
+    this.timerText = this.add.text(400, 60, '2:00', { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5, 0);
     this.timerText.setScrollFactor(0);
 
     // Set up input: arrow keys for movement, spacebar for kicking
