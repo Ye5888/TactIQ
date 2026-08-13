@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { Player } from './entities/Player';
+import { ONE_TWO_ONE, formationToWorldPositions } from './data/formations';
 
 
 type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
@@ -58,13 +59,7 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 1200, 600);
 
     // Team creation, with different players
-    const startingPositions = [
-      { x: 200, y: 300 },
-      { x: 400, y: 150 },
-      { x: 400, y: 450 },
-      { x: 550, y: 100 },
-      { x: 550, y: 500 },
-    ];
+    const startingPositions = formationToWorldPositions(ONE_TWO_ONE, 'left');
 
     for (const pos of startingPositions) {
       this.team.push(new Player(this, pos.x, pos.y, 0xffffff));
@@ -72,13 +67,7 @@ class MainScene extends Phaser.Scene {
 
     this.player = this.team[0];
 
-    const opponentPositions = [
-      { x: 1000, y: 300 },
-      { x: 800, y: 150 },
-      { x: 800, y: 450 },
-      { x: 650, y: 100 },
-      { x: 650, y: 500 },
-    ];
+    const opponentPositions = formationToWorldPositions(ONE_TWO_ONE, 'right');
 
     for (const pos of opponentPositions) {
       this.opponents.push(new Player(this, pos.x, pos.y, 0xff0000));
