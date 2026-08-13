@@ -7,6 +7,7 @@ type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body
 class MainScene extends Phaser.Scene {
   // class fields — declared here, assigned in create()
   private player!: Player;
+  private team: Player[] = [];
   private ball!: PhysicsCircle;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
@@ -55,8 +56,20 @@ class MainScene extends Phaser.Scene {
     // Camera can't scroll past these bounds either — keeps the view locked to the pitch
     this.cameras.main.setBounds(0, 0, 1200, 600);
 
-    // Create the player: white circle with a physics body, spawned at the new world center
-    this.player = new Player(this, 600, 300, 0xffffff);
+    // Team creation, with different players
+    const startingPositions = [
+      { x: 200, y: 300 },
+      { x: 400, y: 150 },
+      { x: 400, y: 450 },
+      { x: 550, y: 100 },
+      { x: 550, y: 500 },
+    ];
+
+    for (const pos of startingPositions) {
+      this.team.push(new Player(this, pos.x, pos.y, 0xffffff));
+    }
+
+    this.player = this.team[0];
 
     // Create the ball: black circle with a bouncy, drag-slowed physics body
     this.ball = this.add.circle(600, 300, 10, 0x000000) as PhysicsCircle;
@@ -101,7 +114,7 @@ class MainScene extends Phaser.Scene {
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     // Player and ball physically collide with each other
-    this.physics.add.collider(this.player, this.ball);
+    this.physics.add.collider(this.team, this.ball);
 
     // Camera follows the ball, easing toward it each frame instead of snapping instantly
     this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
