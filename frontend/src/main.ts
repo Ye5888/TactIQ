@@ -10,6 +10,8 @@ class MainScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private facing = { x: 0, y: 1 };
+  private score = { leftNet: 0, rightNet: 0 };
+  private scoreText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -19,12 +21,14 @@ class MainScene extends Phaser.Scene {
     // empty for now, same as before
   }
 
-  private createGoalZone(x: number, width: number, height: number, label: string) {
+  private createGoalZone(x: number, width: number, height: number, onGoal: () => void) {
     const zone = this.add.rectangle(x, 300, width, height, 0x0000ff, 0);
     this.physics.add.existing(zone, true);
-    this.physics.add.overlap(this.ball, zone, () => {
-      console.log(`GOAL: ${label}`);
-    });
+    this.physics.add.overlap(this.ball, zone, onGoal);
+  }
+  
+  private updateScoreText() {
+    this.scoreText.setText(`${this.score.leftNet} - ${this.score.rightNet}`);
   }
 
   private createWall(x: number, y: number, width: number, height: number) {
@@ -72,8 +76,18 @@ class MainScene extends Phaser.Scene {
     this.createWall(1200 + wallThickness / 2, 127.5, wallThickness, 255);
     this.createWall(1200 + wallThickness / 2, 472.5, wallThickness, 255);
 
-    this.createGoalZone(-40, 40, 100, 'left goal');
-    this.createGoalZone(1240, 40, 100, 'right goal');
+    this.createGoalZone(-40, 40, 100, () => {
+      this.score.leftNet++;
+      this.updateScoreText();
+    });
+    this.createGoalZone(1240, 40, 100, () => {
+      this.score.rightNet++;
+      this.updateScoreText();
+    });
+
+    // Create the score text, horizontally centered near top
+    this.scoreText = this.add.text(600, 20, '0 - 0', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
+    this.scoreText.setScrollFactor(0);
 
     // Set up input: arrow keys for movement, spacebar for kicking
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -87,7 +101,7 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
-    // same body as your current update(), moved in here.
+    // Movement and Direction (arrow keys)
     if (this.cursors.left.isDown) {
       this.player.body.setVelocityX(-200);
       this.facing.x = -1;
@@ -107,7 +121,9 @@ class MainScene extends Phaser.Scene {
     } else {
       this.player.body.setVelocityY(0);
     }
+    
 
+    // Kicking Mechanic
     if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
       const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.ball.x, this.ball.y);
       const kickRange = 40;
