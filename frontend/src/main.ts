@@ -19,6 +19,14 @@ class MainScene extends Phaser.Scene {
     // empty for now, same as before
   }
 
+  private createGoalZone(x: number, width: number, height: number, label: string) {
+    const zone = this.add.rectangle(x, 300, width, height, 0x0000ff, 0);
+    this.physics.add.existing(zone, true);
+    this.physics.add.overlap(this.ball, zone, () => {
+      console.log(`GOAL: ${label}`);
+    });
+  }
+
   private createWall(x: number, y: number, width: number, height: number) {
     const wall = this.add.rectangle(x, y, width, height, 0xff0000, 0); // alpha 0 = invisible
     this.physics.add.existing(wall, true); // true = static body, never moves
@@ -63,6 +71,9 @@ class MainScene extends Phaser.Scene {
     // Right goal line — same gap, mirrored to the other side
     this.createWall(1200 + wallThickness / 2, 127.5, wallThickness, 255);
     this.createWall(1200 + wallThickness / 2, 472.5, wallThickness, 255);
+
+    this.createGoalZone(-40, 40, 100, 'left goal');
+    this.createGoalZone(1240, 40, 100, 'right goal');
 
     // Set up input: arrow keys for movement, spacebar for kicking
     this.cursors = this.input.keyboard!.createCursorKeys();
