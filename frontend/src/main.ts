@@ -147,7 +147,7 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
   }
 
-  update(time: number, delta: number) {
+  update(_time: number, delta: number) {
     // Update the nearest player
     this.updateControlledPlayer();
 
