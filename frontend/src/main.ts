@@ -8,6 +8,7 @@ class MainScene extends Phaser.Scene {
   // class fields — declared here, assigned in create()
   private player!: Player;
   private team: Player[] = [];
+  private opponents: Player[] = [];
   private ball!: PhysicsCircle;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private spaceKey!: Phaser.Input.Keyboard.Key;
@@ -71,6 +72,18 @@ class MainScene extends Phaser.Scene {
 
     this.player = this.team[0];
 
+    const opponentPositions = [
+      { x: 1000, y: 300 },
+      { x: 800, y: 150 },
+      { x: 800, y: 450 },
+      { x: 650, y: 100 },
+      { x: 650, y: 500 },
+    ];
+
+    for (const pos of opponentPositions) {
+      this.opponents.push(new Player(this, pos.x, pos.y, 0xff0000));
+    }
+
     // Create the ball: black circle with a bouncy, drag-slowed physics body
     this.ball = this.add.circle(600, 300, 10, 0x000000) as PhysicsCircle;
     this.physics.add.existing(this.ball);
@@ -115,6 +128,7 @@ class MainScene extends Phaser.Scene {
 
     // Player and ball physically collide with each other
     this.physics.add.collider(this.team, this.ball);
+    this.physics.add.collider(this.opponents, this.ball);
 
     // Camera follows the ball, easing toward it each frame instead of snapping instantly
     this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
