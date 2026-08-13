@@ -18,6 +18,7 @@ class MainScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private timeRemaining = 120; // seconds — a 2 minute match
   private timerText!: Phaser.GameObjects.Text;
+  private matchOver = false;
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -66,6 +67,31 @@ class MainScene extends Phaser.Scene {
       this.player.body.setVelocity(0, 0);
       this.player = nearest;
     }
+  }
+
+  private endMatch() {
+    this.player.body.setVelocity(0, 0);
+    this.ball.body.setVelocity(0, 0);
+    for (const opponent of this.opponents) {
+      opponent.body.setVelocity(0, 0);
+    }
+
+    let resultText: string;
+
+    if (this.score.leftNet > this.score.rightNet) {
+      resultText = 'You Win!';
+    } else if (this.score.rightNet > this.score.leftNet) {
+      resultText = 'You Lose!';
+    } else {
+      resultText = 'Draw!';
+    }
+
+    const banner = this.add.text(600, 300, `${resultText}\nFinal Score: ${this.score.leftNet} - ${this.score.rightNet}`, {
+      fontSize: '48px',
+      color: '#ffffff',
+      align: 'center',
+    }).setOrigin(0.5, 0.5);
+    banner.setScrollFactor(0);
   }
 
   create() {
@@ -155,6 +181,15 @@ class MainScene extends Phaser.Scene {
     this.timeRemaining -= delta / 1000;
     if (this.timeRemaining < 0) {
       this.timeRemaining = 0;
+    }
+
+    if (this.timeRemaining === 0 && !this.matchOver) {
+      this.matchOver = true;
+      this.endMatch();
+    }
+
+    if (this.matchOver) {
+      return;
     }
 
     const minutes = Math.floor(this.timeRemaining / 60);
