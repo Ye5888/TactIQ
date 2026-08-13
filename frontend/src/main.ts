@@ -16,6 +16,8 @@ class MainScene extends Phaser.Scene {
   private facing = { x: 0, y: 1 };
   private score = { leftNet: 0, rightNet: 0 };
   private scoreText!: Phaser.GameObjects.Text;
+  private timeRemaining = 120; // seconds — a 2 minute match
+  private timerText!: Phaser.GameObjects.Text;
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -129,6 +131,10 @@ class MainScene extends Phaser.Scene {
     this.scoreText = this.add.text(600, 20, '0 - 0', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
     this.scoreText.setScrollFactor(0);
 
+    // Create timer text, similar to the score text
+    this.timerText = this.add.text(600, 60, '2:00', { fontSize: '24px', color: '#ffffff' }).setOrigin(0.5, 0);
+    this.timerText.setScrollFactor(0);
+
     // Set up input: arrow keys for movement, spacebar for kicking
     this.cursors = this.input.keyboard!.createCursorKeys();
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -141,9 +147,19 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
   }
 
-  update() {
+  update(time: number, delta: number) {
     // Update the nearest player
     this.updateControlledPlayer();
+
+    // Update time
+    this.timeRemaining -= delta / 1000;
+    if (this.timeRemaining < 0) {
+      this.timeRemaining = 0;
+    }
+
+    const minutes = Math.floor(this.timeRemaining / 60);
+    const seconds = Math.floor(this.timeRemaining % 60);
+    this.timerText.setText(`${minutes}:${seconds.toString().padStart(2, '0')}`);
 
     // Movement and Direction (arrow keys)
     if (this.cursors.left.isDown) {
