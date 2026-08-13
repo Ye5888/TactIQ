@@ -48,6 +48,24 @@ class MainScene extends Phaser.Scene {
     this.physics.add.collider(this.ball, wall);
   }
 
+  private updateControlledPlayer() {
+    let nearest = this.team[0];
+    let nearestDist = Phaser.Math.Distance.Between(nearest.x, nearest.y, this.ball.x, this.ball.y);
+
+    for (const teammate of this.team) {
+      const dist = Phaser.Math.Distance.Between(teammate.x, teammate.y, this.ball.x, this.ball.y);
+      if (dist < nearestDist) {
+        nearest = teammate;
+        nearestDist = dist;
+      }
+    }
+
+    if (nearest !== this.player) {
+      this.player.body.setVelocity(0, 0);
+      this.player = nearest;
+    }
+  }
+
   create() {
     // Draw the pitch background — sized/centered to the new 1200x600 world (was 800x600)
     this.add.rectangle(600, 300, 1200, 600, 0x2e7d32);
@@ -124,6 +142,9 @@ class MainScene extends Phaser.Scene {
   }
 
   update() {
+    // Update the nearest player
+    this.updateControlledPlayer();
+
     // Movement and Direction (arrow keys)
     if (this.cursors.left.isDown) {
       this.player.body.setVelocityX(-200);
