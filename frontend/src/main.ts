@@ -26,9 +26,16 @@ class MainScene extends Phaser.Scene {
     this.physics.add.existing(zone, true);
     this.physics.add.overlap(this.ball, zone, onGoal);
   }
-  
+
   private updateScoreText() {
     this.scoreText.setText(`${this.score.leftNet} - ${this.score.rightNet}`);
+  }
+
+  private resetKickoff() {
+    this.ball.setPosition(600, 300);
+    this.ball.body.setVelocity(0, 0);
+    this.player.setPosition(600, 300);
+    this.player.body.setVelocity(0, 0);
   }
 
   private createWall(x: number, y: number, width: number, height: number) {
@@ -79,10 +86,12 @@ class MainScene extends Phaser.Scene {
     this.createGoalZone(-40, 40, 100, () => {
       this.score.leftNet++;
       this.updateScoreText();
+      this.resetKickoff();
     });
     this.createGoalZone(1240, 40, 100, () => {
       this.score.rightNet++;
       this.updateScoreText();
+      this.resetKickoff();
     });
 
     // Create the score text, horizontally centered near top
@@ -121,7 +130,7 @@ class MainScene extends Phaser.Scene {
     } else {
       this.player.body.setVelocityY(0);
     }
-    
+
 
     // Kicking Mechanic
     if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
