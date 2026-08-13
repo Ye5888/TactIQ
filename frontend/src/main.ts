@@ -161,6 +161,12 @@ class MainScene extends Phaser.Scene {
         this.ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
       }
     }
+
+
+    // Have opponents chase ball
+    for (const opponent of this.opponents) {
+      opponent.moveToward(this.ball.x, this.ball.y, 150);
+    }
   }
 }
 
