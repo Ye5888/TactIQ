@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import { Player } from './entities/Player';
 import { ONE_TWO_ONE, formationToWorldPositions, type Formation } from './data/formations';
 import { FormationSelectScene } from './scenes/FormationSelectScene';
+import { DraftScene } from './scenes/DraftScene';
+import type { RosterPlayer } from './data/roster';
 
 
 type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
@@ -21,6 +23,7 @@ class MainScene extends Phaser.Scene {
   private timerText!: Phaser.GameObjects.Text;
   private matchOver = false;
   private chosenFormation: Formation = ONE_TWO_ONE;
+  private squad: RosterPlayer[] = [];
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -30,9 +33,12 @@ class MainScene extends Phaser.Scene {
     // empty for now, same as before
   }
 
-  init(data: { formation?: Formation }) {
+  init(data: { formation?: Formation; squad?: RosterPlayer[] }) {
     if (data.formation) {
       this.chosenFormation = data.formation;
+    }
+    if (data.squad) {
+      this.squad = data.squad;
     }
   }
 
@@ -275,7 +281,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: [FormationSelectScene, MainScene] // pass the class itself, not an object of functions
+  scene: [FormationSelectScene, DraftScene, MainScene] // pass the class itself, not an object of functions
 };
 
 new Phaser.Game(config); // not assigning to an unused variable fixes TS6133
