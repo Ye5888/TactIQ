@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Player } from './entities/Player';
-import { ONE_TWO_ONE, formationToWorldPositions } from './data/formations';
+import { ONE_TWO_ONE, formationToWorldPositions, type Formation } from './data/formations';
+import { FormationSelectScene } from './scenes/FormationSelectScene';
 
 
 type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
@@ -19,6 +20,7 @@ class MainScene extends Phaser.Scene {
   private timeRemaining = 120; // seconds — a 2 minute match
   private timerText!: Phaser.GameObjects.Text;
   private matchOver = false;
+  private chosenFormation: Formation = ONE_TWO_ONE;
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -26,6 +28,12 @@ class MainScene extends Phaser.Scene {
 
   preload() {
     // empty for now, same as before
+  }
+
+  init(data: { formation?: Formation }) {
+    if (data.formation) {
+      this.chosenFormation = data.formation;
+    }
   }
 
   private createGoalZone(x: number, width: number, height: number, onGoal: () => void) {
@@ -69,6 +77,8 @@ class MainScene extends Phaser.Scene {
     }
   }
 
+
+
   private endMatch() {
     this.player.body.setVelocity(0, 0);
     this.ball.body.setVelocity(0, 0);
@@ -105,7 +115,7 @@ class MainScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, 1200, 600);
 
     // Team creation, with different players
-    const startingPositions = formationToWorldPositions(ONE_TWO_ONE, 'left');
+    const startingPositions = formationToWorldPositions(this.chosenFormation, 'left');
 
     for (const pos of startingPositions) {
       this.team.push(new Player(this, pos.x, pos.y, 0xffffff));
@@ -265,7 +275,7 @@ const config: Phaser.Types.Core.GameConfig = {
       debug: false
     }
   },
-  scene: MainScene // pass the class itself, not an object of functions
+  scene: [FormationSelectScene, MainScene] // pass the class itself, not an object of functions
 };
 
 new Phaser.Game(config); // not assigning to an unused variable fixes TS6133
