@@ -123,9 +123,13 @@ class MainScene extends Phaser.Scene {
     // Team creation, with different players
     const startingPositions = formationToWorldPositions(this.chosenFormation, 'left');
 
-    for (const pos of startingPositions) {
-      this.team.push(new Player(this, pos.x, pos.y, 0xffffff));
-    }
+    startingPositions.forEach((pos, index) => {
+      const player = new Player(this, pos.x, pos.y, 0xffffff);
+      this.team.push(player);
+
+      const name = this.squad[index]?.name ?? `Player ${index + 1}`;
+      this.add.text(pos.x, pos.y - 25, name, { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5, 1);
+    });
 
     this.player = this.team[0];
 
