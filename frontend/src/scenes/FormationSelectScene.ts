@@ -14,7 +14,7 @@ export class FormationSelectScene extends Phaser.Scene {
             const label = this.add.text(400, y, option.name, { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5, 0);
             label.setInteractive({ useHandCursor: true });
             label.on('pointerdown', () => {
-                this.scene.start('MainScene', { formation: option.formation });
+                this.scene.start('DraftScene', { formation: option.formation });
             });
         });
     }
