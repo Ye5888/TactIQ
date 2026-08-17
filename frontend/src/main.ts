@@ -24,6 +24,7 @@ class MainScene extends Phaser.Scene {
   private matchOver = false;
   private chosenFormation: Formation = ONE_TWO_ONE;
   private squad: RosterPlayer[] = [];
+  private nameLabels: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -128,7 +129,8 @@ class MainScene extends Phaser.Scene {
       this.team.push(player);
 
       const name = this.squad[index]?.name ?? `Player ${index + 1}`;
-      this.add.text(pos.x, pos.y - 25, name, { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5, 1);
+      const label = this.add.text(pos.x, pos.y - 25, name, { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5, 1);
+      this.nameLabels.push(label);
     });
 
     this.player = this.team[0];
@@ -201,6 +203,11 @@ class MainScene extends Phaser.Scene {
     this.timeRemaining -= delta / 1000;
     if (this.timeRemaining < 0) {
       this.timeRemaining = 0;
+    }
+
+    // Move name labels according to player position
+    for (let i = 0; i < this.team.length; i++) {
+      this.nameLabels[i].setPosition(this.team[i].x, this.team[i].y - 25);
     }
 
     if (this.timeRemaining === 0 && !this.matchOver) {
