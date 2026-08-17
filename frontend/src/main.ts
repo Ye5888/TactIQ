@@ -1,10 +1,7 @@
 import Phaser from 'phaser';
-import { Player } from './entities/Player';
-import { ONE_TWO_ONE, formationToWorldPositions, type Formation } from './data/formations';
 import { FormationSelectScene } from './scenes/FormationSelectScene';
 import { DraftScene } from './scenes/DraftScene';
 import { MainScene } from './scenes/MainScene';
-import type { RosterPlayer } from './data/roster';
 
 
 const config: Phaser.Types.Core.GameConfig = {
