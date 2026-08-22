@@ -45,6 +45,6 @@ def read_root():
 
 @app.get("/players")
 async def get_players():
-    players = await Player.find_all.to_list()
+    players = await Player.find_all().to_list()
     return players
     
