@@ -18,6 +18,17 @@ class Player(Document):
         name = "players"
         # This declares which collection Player belongs to in MongoDB
         
+class Formation(Document):
+    name: str
+    
+    # Number of players
+    defense: int
+    midfield: int
+    attack: int
+    
+    class Settings:
+        name = "formations"
+        
 
 
 @asynccontextmanager
@@ -46,10 +57,18 @@ def read_root():
     return {"message" : "backend is running"}
 
 @app.get("/players")
-async def get_players():
+async def get_all_players():
     players = await Player.find_all().to_list()
     return players
     
+@app.get("/players/{player_id}")
+async def get_player(player_id : str):
+    specific_player = await Player.get(player_id)
+    if specific_player is None:
+        raise HTTPException(status_code=404, detail=f"No player found with id {player_id}")
+    
+    return specific_player
+
 # So basically frontend sends over json data and then because Player
 # is a Pydantic model, FastAPI is able to clean the data
 # and then create an actual Player object out of it called player
@@ -79,3 +98,49 @@ async def delete_player(player_id : str):
         raise HTTPException(status_code=404, detail=f"No player found with id {player_id}")
     await specific_player.delete()
     return {"message": f"Deleted player {player_id}"}
+
+
+
+### Formations Class
+
+@app.get("/formations")
+async def get_all_formations():
+    formations = await Formation.find_all().to_list()
+    return formations
+
+@app.get("/formations/{formation_id}")
+async def get_formation(formation_id : str):
+    specific_formation = await Formation.get(formation_id)
+    
+    if specific_formation is None:
+        raise HTTPException(status_code=404, detail=f"No formation found with id {formation_id}")
+    
+    return specific_formation
+
+@app.post("/formations")
+async def create_formation(formation : Formation):
+    await formation.insert()
+    
+    return formation
+
+@app.put("/formations/{formation_id}")
+async def update_formation(formation_id : str, formation : Formation):
+    specific_formation = await Formation.get(formation_id)
+    
+    if specific_formation is None:
+        raise HTTPException(status_code=404, detail=f"No formation found with id {formation_id}") 
+    
+    await specific_formation.set(formation.model_dump(exclude={"id"}))
+    
+    return specific_formation
+    
+    
+@app.delete("/formations/{formation_id}")
+async def delete_formation(formation_id : str):
+    specific_formation = await Formation.get(formation_id)
+    if specific_formation is None:
+        raise HTTPException(status_code=404, detail=f"No formation found with id {formation_id}") 
+    
+    await specific_formation.delete()
+    return {"message" : f"Delete formation {formation_id}"}
+    
