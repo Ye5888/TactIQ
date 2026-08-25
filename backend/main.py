@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie, Document
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -17,14 +18,14 @@ class Player(Document):
     class Settings:
         name = "players"
         # This declares which collection Player belongs to in MongoDB
-        
+
+class FormationSlot(BaseModel):
+    x : float
+    y : float
+
 class Formation(Document):
     name: str
-    
-    # Number of players
-    defense: int
-    midfield: int
-    attack: int
+    slots: list[FormationSlot]
     
     class Settings:
         name = "formations"
@@ -39,7 +40,7 @@ async def lifespan(app: FastAPI):
     
     # Beanie is what translates between our code and the database - knows which is our
     # through client.tactiq, and document_models provides the models for documents
-    await init_beanie(database=client.tactiq, document_models=[Player])
+    await init_beanie(database=client.tactiq, document_models=[Player, Formation])
     yield
     
     # yield pauses the function, leaving client alive and open for as long
