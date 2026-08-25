@@ -13,8 +13,10 @@ class Player(Document):
     pace: int
     shot: int
     
+    
     class Settings:
         name = "players"
+        # This declares which collection Player belongs to in MongoDB
         
 
 
@@ -48,3 +50,28 @@ async def get_players():
     players = await Player.find_all().to_list()
     return players
     
+# So basically frontend sends over json data and then because Player
+# is a Pydantic model, FastAPI is able to clean the data
+# and then create an actual Player object out of it called player
+# If the json data isn't the correct format then it is rejected    
+@app.post("/players")
+async def create_player(player : Player):
+    await player.insert()
+    
+    return player
+
+@app.put("/players/{player_id}")
+async def update_player(player_id : str, player: Player):
+    specific_player = await Player.get(player_id)
+    
+    # Updates specific_player's attributes to player, don't want to update ID which comes as none
+    # in the JSON request
+    await specific_player.set(player.model_dump(exclude={"id"})) 
+    
+    return specific_player
+
+@app.delete("/players/{player_id}")
+async def delete_player(player_id : str):
+    specific_player = await Player.get(player_id)
+    await specific_player.delete()
+    return {"message": f"Deleted player {player_id}"}
