@@ -1,7 +1,7 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from beanie import init_beanie, Document
@@ -63,6 +63,8 @@ async def create_player(player : Player):
 @app.put("/players/{player_id}")
 async def update_player(player_id : str, player: Player):
     specific_player = await Player.get(player_id)
+    if specific_player is None:
+        raise HTTPException(status_code=404, detail=f"No player found with id {player_id}")
     
     # Updates specific_player's attributes to player, don't want to update ID which comes as none
     # in the JSON request
@@ -73,5 +75,7 @@ async def update_player(player_id : str, player: Player):
 @app.delete("/players/{player_id}")
 async def delete_player(player_id : str):
     specific_player = await Player.get(player_id)
+    if specific_player is None:
+        raise HTTPException(status_code=404, detail=f"No player found with id {player_id}")
     await specific_player.delete()
     return {"message": f"Deleted player {player_id}"}
