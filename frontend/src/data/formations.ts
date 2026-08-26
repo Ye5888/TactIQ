@@ -17,11 +17,6 @@ export const TWO_TWO: Formation = [
   { x: 0.75, y: 0.7 },
 ];
 
-export const FORMATIONS: { name: string; formation: Formation }[] = [
-  { name: '1-2-1', formation: ONE_TWO_ONE },
-  { name: '2-2', formation: TWO_TWO },
-];
-
 export function formationToWorldPositions(formation: Formation, side: 'left' | 'right'): FormationSlot[] {
   return formation.map((slot) => {
     const worldX = side === 'left' ? slot.x * 600 : 1200 - slot.x * 600;
