@@ -22,6 +22,7 @@ export class MainScene extends Phaser.Scene {
     private chosenFormation: Formation = ONE_TWO_ONE;
     private squad: RosterPlayer[] = [];
     private nameLabels: Phaser.GameObjects.Text[] = [];
+    private possessor: Player | null = null;
 
     constructor() {
         super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -78,6 +79,31 @@ export class MainScene extends Phaser.Scene {
         if (nearest !== this.player) {
             this.player.body.setVelocity(0, 0);
             this.player = nearest;
+        }
+    }
+
+    private updatePossession() {
+        if (this.possessor !== null) {
+            return;
+            // Ball is already taken, return. This will change later
+        }
+
+        const pickupRange = 20;
+        const allPlayers = [...this.team, ...this.opponents];
+
+        let closest: Player | null = null;
+        let closestDist = Infinity;
+
+        for (const candidate of allPlayers) {
+            const dist = Phaser.Math.Distance.Between(candidate.x, candidate.y, this.ball.x, this.ball.y);
+            if (dist < pickupRange && dist < closestDist) {
+                closest = candidate;
+                closestDist = dist;
+            }
+        }
+
+        if (closest !== null) {
+            this.possessor = closest;
         }
     }
 
@@ -195,6 +221,7 @@ export class MainScene extends Phaser.Scene {
     update(_time: number, delta: number) {
         // Update the nearest player
         this.updateControlledPlayer();
+        this.updatePossession();
 
         // Update time
         this.timeRemaining -= delta / 1000;
