@@ -21,8 +21,8 @@ export class DraftScene extends Phaser.Scene {
         type PlayerDoc = {
             _id: string,
             name: string,
-            pace: integer,
-            shot: integer,
+            pace: number,
+            shot: number,
         }
 
         const response = await fetch("http://127.0.0.1:8000/players");

@@ -12,8 +12,12 @@ export class FormationSelectScene extends Phaser.Scene {
             slots: { x: number; y: number }[];
         };
 
+        const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+
         const response = await fetch("http://127.0.0.1:8000/formations");
         const formations: FormationDoc[] = await response.json();
+
+        loadingText.destroy();
 
         this.add.text(400, 60, 'Choose a Formation', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
 
