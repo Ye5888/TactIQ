@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 
 export class Player extends Phaser.GameObjects.Arc {
+    facing = { x: 0, y: 1 };
+
     declare body: Phaser.Physics.Arcade.Body;
 
     constructor(scene: Phaser.Scene, x: number, y: number, color: number) {
@@ -23,6 +25,7 @@ export class Player extends Phaser.GameObjects.Arc {
 
         const dirX = dx / distance;
         const dirY = dy / distance;
+        this.facing = { x: dirX, y: dirY };
         this.body.setVelocity(dirX * speed, dirY * speed);
     }
 }

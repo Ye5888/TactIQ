@@ -13,7 +13,6 @@ export class MainScene extends Phaser.Scene {
     private ball!: PhysicsCircle;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private spaceKey!: Phaser.Input.Keyboard.Key;
-    private facing = { x: 0, y: 1 };
     private score = { leftNet: 0, rightNet: 0 };
     private scoreText!: Phaser.GameObjects.Text;
     private timeRemaining = 120; // seconds — a 2 minute match
@@ -250,20 +249,20 @@ export class MainScene extends Phaser.Scene {
         // Movement and Direction (arrow keys)
         if (this.cursors.left.isDown) {
             this.player.body.setVelocityX(-200);
-            this.facing.x = -1;
+            this.player.facing.x = -1;
         } else if (this.cursors.right.isDown) {
             this.player.body.setVelocityX(200);
-            this.facing.x = 1;
+            this.player.facing.x = 1;
         } else {
             this.player.body.setVelocityX(0);
         }
 
         if (this.cursors.up.isDown) {
             this.player.body.setVelocityY(-200);
-            this.facing.y = -1;
+            this.player.facing.y = -1;
         } else if (this.cursors.down.isDown) {
             this.player.body.setVelocityY(200);
-            this.facing.y = 1;
+            this.player.facing.y = 1;
         } else {
             this.player.body.setVelocityY(0);
         }
@@ -277,9 +276,9 @@ export class MainScene extends Phaser.Scene {
             if (dist < kickRange) {
                 const kickSpeed = 400;
 
-                const magnitude = Math.sqrt(this.facing.x ** 2 + this.facing.y ** 2);
-                const normalizedX = this.facing.x / magnitude;
-                const normalizedY = this.facing.y / magnitude;
+                const magnitude = Math.sqrt(this.player.facing.x ** 2 + this.player.facing.y ** 2);
+                const normalizedX = this.player.facing.x / magnitude;
+                const normalizedY = this.player.facing.y / magnitude;
 
                 this.ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
             }
