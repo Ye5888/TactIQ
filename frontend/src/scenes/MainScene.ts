@@ -285,18 +285,17 @@ export class MainScene extends Phaser.Scene {
         }
 
 
-        // Have opponents chase ball, and then kick whenever dist < kickRange
-        const kickRange = 40;
+        // Have opponents chase ball, if øne of them has the ball they kick it towards goal
         const kickSpeed = 400;
 
         for (const opponent of this.opponents) {
             opponent.moveToward(this.ball.x, this.ball.y, 150);
 
-            const distToBall = Phaser.Math.Distance.Between(opponent.x, opponent.y, this.ball.x, this.ball.y);
-            if (distToBall < kickRange) {
+            if (this.possessor === opponent) {
                 const dx = 0 - this.ball.x;
                 const dy = 300 - this.ball.y;
                 const magnitude = Math.sqrt(dx * dx + dy * dy);
+                this.possessor = null;
                 this.ball.body.setVelocity((dx / magnitude) * kickSpeed, (dy / magnitude) * kickSpeed);
             }
         }
