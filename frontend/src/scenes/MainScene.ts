@@ -294,7 +294,8 @@ export class MainScene extends Phaser.Scene {
                 const magnitude = Math.sqrt(this.player.facing.x ** 2 + this.player.facing.y ** 2);
                 const normalizedX = this.player.facing.x / magnitude;
                 const normalizedY = this.player.facing.y / magnitude;
-
+                
+                this.possessor = null;
                 this.ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
             }
         }
