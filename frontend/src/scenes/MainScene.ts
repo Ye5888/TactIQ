@@ -55,6 +55,7 @@ export class MainScene extends Phaser.Scene {
         this.ball.body.setVelocity(0, 0);
         this.player.setPosition(600, 300);
         this.player.body.setVelocity(0, 0);
+        this.possessor = null;
     }
 
     private createWall(x: number, y: number, width: number, height: number) {
@@ -104,6 +105,19 @@ export class MainScene extends Phaser.Scene {
         if (closest !== null) {
             this.possessor = closest;
         }
+    }
+
+    private updateBallFollow() {
+        if (this.possessor === null) {
+            return;
+        }
+
+        const offset = 15;
+        this.ball.setPosition(
+            this.possessor.x + this.possessor.facing.x * offset,
+            this.possessor.y + this.possessor.facing.y * offset
+        );
+        this.ball.body.setVelocity(0, 0);
     }
 
 
@@ -221,6 +235,7 @@ export class MainScene extends Phaser.Scene {
         // Update the nearest player
         this.updateControlledPlayer();
         this.updatePossession();
+        this.updateBallFollow();
 
         // Update time
         this.timeRemaining -= delta / 1000;
@@ -297,6 +312,7 @@ export class MainScene extends Phaser.Scene {
                 const dx = 0 - this.ball.x;
                 const dy = 300 - this.ball.y;
                 const magnitude = Math.sqrt(dx * dx + dy * dy);
+                this.possessor = null;
                 this.ball.body.setVelocity((dx / magnitude) * kickSpeed, (dy / magnitude) * kickSpeed);
             }
         }
