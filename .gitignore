@@ -29,6 +29,10 @@ __pycache__/
 venv/
 .venv/
 
+# RL training artifacts
+rl/models/
+rl/runs/
+
 # Environment variables / secrets
 .env
 .env.local
