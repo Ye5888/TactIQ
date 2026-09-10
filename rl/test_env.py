@@ -214,6 +214,30 @@ def test_observation_after_reset_is_valid() -> None:
     assert np.all(obs >= -1.0)
     assert np.all(obs <= 1.0)
     assert env.observation_space.contains(obs)
+    
+    
+def test_valid_kick_gets_positive_reward() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    actions = np.array([9, 0, 0, 0, 0])
+
+    _, reward, _, _, _ = env.step(actions)
+
+    assert reward > 0
+
+def test_invalid_kick_gets_penalty() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    actions = np.array([9, 0, 0, 0, 0])
+
+    _, reward, _, _, _ = env.step(actions)
+
+    assert reward < 0
 
 
 def run_tests() -> None:
@@ -230,6 +254,8 @@ def run_tests() -> None:
         test_ball_bounces_off_top_wall,
         test_match_truncates_after_time_limit,
         test_observation_after_reset_is_valid,
+        test_valid_kick_gets_positive_reward,
+        test_invalid_kick_gets_penalty
     ]
 
     passed = 0

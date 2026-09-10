@@ -123,7 +123,26 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         previous_ball_x = float(self.ball_pos[0])
         previous_possessor = self.possessor
 
-        self._apply_rl_actions(np.asarray(action, dtype=np.int64))
+        actions = np.asarray(action, dtype=np.int64)
+
+        # Reward a kick from the RL player who actually has possession.
+        valid_kick = False
+        invalid_kicks = 0
+
+        if self.possessor is not None and self.possessor[0] == "rl":
+            possessor_index = self.possessor[1]
+
+            for i, player_action in enumerate(actions):
+                if player_action == 9:
+                    if i == possessor_index:
+                        valid_kick = True
+                    else:
+                        invalid_kicks += 1
+        else:
+            # If the RL team does not have possession, every kick action is useless.
+            invalid_kicks = int(np.sum(actions == 9))
+
+        self._apply_rl_actions(actions)
         self._apply_scripted_user()
         self._update_free_ball()
         self._update_possession()
@@ -132,6 +151,12 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         goal_reward = self._handle_goal_if_needed()
 
         reward = goal_reward
+
+        if valid_kick:
+            reward += 0.05
+
+        # This penalizes kicking too much
+        reward -= 0.001 * invalid_kicks
 
         # Small dense shaping rewards. The RL team attacks LEFT, so decreasing
         # ball x is progress when RL has possession.
