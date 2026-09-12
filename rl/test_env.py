@@ -263,32 +263,6 @@ def test_rl_player_can_pass_to_teammate() -> None:
     # Ball should now be moving.
     assert np.linalg.norm(env.ball_vel) > 0
 
-
-def test_non_possessor_cannot_pass() -> None:
-    env = SoccerEnv()
-    env.reset()
-
-    # Player 0 has possession.
-    env.possessor = ("rl", 0)
-    env._attach_ball_to_possessor()
-
-    original_velocity = env.ball_vel.copy()
-
-    # Player 1 tries to pass to player 2.
-    # Action 12 = pass to teammate 2.
-    actions = np.array([0, 12, 0, 0, 0])
-
-    env._apply_rl_actions(actions)
-
-    # Player 0 should still have possession.
-    assert env.possessor == ("rl", 0)
-
-    # No pass should have started.
-    assert env.pending_pass is None
-
-    assert np.allclose(env.ball_vel, original_velocity)
-
-
 def test_non_possessor_cannot_pass() -> None:
     env = SoccerEnv()
     env.reset()
