@@ -224,7 +224,7 @@ def main(episodes: int = 20) -> None:
     print()
     print("RL goal types:")
     print(f"Dribble goals: {rl_dribble_goals}")
-    print(f"Kick goals: {rl_shot_goals}")
+    print(f"Shot goals: {rl_shot_goals}")
     print(f"Other goals: {rl_other_goals}")
 
     print()
