@@ -31,7 +31,7 @@ def main() -> None:
         tensorboard_log=str(ROOT / "runs"),
     )
 
-    model.learn(total_timesteps=50_000, progress_bar=True)
+    model.learn(total_timesteps=500_000, progress_bar=True)
     model.save(MODEL_DIR / "tactiq_opponent")
 
 
