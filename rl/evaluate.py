@@ -19,7 +19,12 @@ ACTION_NAMES = [
     "up-right",
     "down-left",
     "down-right",
-    "kick",
+    "shoot",
+    "pass-to-0",
+    "pass-to-1",
+    "pass-to-2",
+    "pass-to-3",
+    "pass-to-4",
 ]
 
 
@@ -30,16 +35,20 @@ def main(episodes: int = 20) -> None:
     wins = draws = losses = 0
     total_rl = total_user = 0
 
-    action_counts = np.zeros(10, dtype=np.int64)
+    action_counts = np.zeros(15, dtype=np.int64)
 
     rl_possessions = 0
     user_possessions = 0
 
-    successful_rl_kicks = 0
-    successful_user_kicks = 0
+    valid_rl_shots = 0
+    scripted_kicks = 0
+
+    rl_pass_attempts = 0
+    rl_completed_passes = 0
+    rl_intercepted_passes = 0
 
     rl_dribble_goals = 0
-    rl_kick_goals = 0
+    rl_shot_goals = 0
     rl_other_goals = 0
 
     min_ball_x = env.WIDTH
@@ -105,34 +114,46 @@ def main(episodes: int = 20) -> None:
                 action_counts[int(player_action)] += 1
 
             # Track what is happening to the ball before this step.
-            if (
-                env.possessor is not None
-                and env.possessor[0] == "rl"
-            ):
+            # Track what the player with the ball is trying to do.
+            if env.possessor is not None and env.possessor[0] == "rl":
                 possessor_index = env.possessor[1]
+                possessor_action = int(action[possessor_index])
 
-                if action[possessor_index] == 9:
-                    successful_rl_kicks += 1
-                    last_ball_action = "rl_kick"
+                # Action 9 = shoot.
+                if possessor_action == 9:
+                    valid_rl_shots += 1
+                    last_ball_action = "rl_shot"
+
+                # Actions 10-14 = pass to RL players 0-4.
+                elif 10 <= possessor_action <= 14:
+                    receiver_index = possessor_action - 10
+
+                    # Ignore self-passes because the environment does too.
+                    if receiver_index != possessor_index:
+                        rl_pass_attempts += 1
+                        last_ball_action = "rl_pass"
+
                 else:
                     last_ball_action = "rl_dribble"
 
-            elif (
-                env.possessor is not None
-                and env.possessor[0] == "user"
-            ):
+            elif env.possessor is not None and env.possessor[0] == "user":
                 # Scripted team automatically kicks when it has possession.
-                successful_user_kicks += 1
+                scripted_kicks += 1
                 last_ball_action = "scripted_kick"
 
             previous_rl_score = env.rl_score
 
             obs, _, terminated, truncated, info = env.step(action)
+            if info["pass_completed"]:
+                rl_completed_passes += 1
+
+            if info["pass_intercepted"]:
+                rl_intercepted_passes += 1
 
             # If RL scored during this step, record how the goal happened.
             if env.rl_score > previous_rl_score:
-                if last_ball_action == "rl_kick":
-                    rl_kick_goals += 1
+                if last_ball_action == "rl_shot":
+                    rl_shot_goals += 1
 
                 elif last_ball_action == "rl_dribble":
                     rl_dribble_goals += 1
@@ -193,14 +214,17 @@ def main(episodes: int = 20) -> None:
     print(f"Scripted: {user_possessions}")
 
     print()
-    print("Successful kicks:")
-    print(f"RL: {successful_rl_kicks}")
-    print(f"Scripted: {successful_user_kicks}")
+    print("RL ball actions:")
+    print(f"Valid shots: {valid_rl_shots}")
+    print(f"Pass attempts: {rl_pass_attempts}")
+    print(f"Completed passes: {rl_completed_passes}")
+    print(f"Intercepted passes: {rl_intercepted_passes}")
+    print(f"Scripted kicks: {scripted_kicks}")
 
     print()
     print("RL goal types:")
     print(f"Dribble goals: {rl_dribble_goals}")
-    print(f"Kick goals: {rl_kick_goals}")
+    print(f"Kick goals: {rl_shot_goals}")
     print(f"Other goals: {rl_other_goals}")
 
     print()

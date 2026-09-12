@@ -34,8 +34,8 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
     PICKUP_RANGE = 20.0
     BALL_DRAG = 0.92
 
-    # idle, 8 directions, kick
-    N_ACTIONS_PER_PLAYER = 10
+    # idle, 8 directions, shoot, pass to players 0-4
+    N_ACTIONS_PER_PLAYER = 15
 
     MOVE_DIRECTIONS = np.array(
         [
@@ -84,12 +84,17 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.user_pos = np.zeros((self.N_PLAYERS, 2), dtype=np.float32)
         self.rl_pos = np.zeros((self.N_PLAYERS, 2), dtype=np.float32)
-        self.rl_facing = np.tile(np.array([-1.0, 0.0], dtype=np.float32), (self.N_PLAYERS, 1))
-        self.user_facing = np.tile(np.array([1.0, 0.0], dtype=np.float32), (self.N_PLAYERS, 1))
+        self.rl_facing = np.tile(
+            np.array([-1.0, 0.0], dtype=np.float32), (self.N_PLAYERS, 1)
+        )
+        self.user_facing = np.tile(
+            np.array([1.0, 0.0], dtype=np.float32), (self.N_PLAYERS, 1)
+        )
 
         self.ball_pos = np.zeros(2, dtype=np.float32)
         self.ball_vel = np.zeros(2, dtype=np.float32)
         self.possessor: tuple[str, int] | None = None
+        self.pending_pass: tuple[int, int] | None = None
         self.rl_score = 0
         self.user_score = 0
         self.steps = 0
@@ -112,6 +117,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self.ball_pos[:] = (600.0, 300.0)
         self.ball_vel[:] = 0.0
         self.possessor = None
+        self.pending_pass = None
         self.rl_score = 0
         self.user_score = 0
         self.steps = 0
@@ -126,37 +132,64 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         actions = np.asarray(action, dtype=np.int64)
 
         # Reward a kick from the RL player who actually has possession.
-        valid_kick = False
-        invalid_kicks = 0
+        valid_shot = False
+        invalid_shots = 0
+        invalid_passes = 0
 
         if self.possessor is not None and self.possessor[0] == "rl":
             possessor_index = self.possessor[1]
 
             for i, player_action in enumerate(actions):
+
+                # Shoot
                 if player_action == 9:
                     if i == possessor_index:
-                        valid_kick = True
+                        valid_shot = True
                     else:
-                        invalid_kicks += 1
+                        invalid_shots += 1
+
+                # Pass
+                elif 10 <= player_action <= 14:
+                    receiver_index = int(player_action - 10)
+
+                    # A non-possessor cannot pass.
+                    if i != possessor_index:
+                        invalid_passes += 1
+
+                    # The possessor cannot pass to itself.
+                    elif receiver_index == i:
+                        invalid_passes += 1
+
         else:
-            # If the RL team does not have possession, every kick action is useless.
-            invalid_kicks = int(np.sum(actions == 9))
+            # RL does not have possession, so all shoot/pass actions are invalid.
+            invalid_shots = int(np.sum(actions == 9))
+
+            invalid_passes = int(
+                np.sum((actions >= 10) & (actions <= 14))
+            )
 
         self._apply_rl_actions(actions)
         self._apply_scripted_user()
         self._update_free_ball()
         self._update_possession()
+
+        pass_completed, pass_intercepted = self._resolve_pending_pass()
+
         self._attach_ball_to_possessor()
 
         goal_reward = self._handle_goal_if_needed()
 
         reward = goal_reward
 
-        if valid_kick:
+        if pass_completed:
+            reward += 0.03
+
+        if valid_shot:
             reward += 0.05
 
-        # This penalizes kicking too much
-        reward -= 0.001 * invalid_kicks
+        # This penalizes shooting/passing too much
+        reward -= 0.001 * invalid_shots
+        reward -= 0.001 * invalid_passes
 
         # Small dense shaping rewards. The RL team attacks LEFT, so decreasing
         # ball x is progress when RL has possession.
@@ -182,19 +215,42 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             "rl_score": self.rl_score,
             "user_score": self.user_score,
             "possessor": self.possessor,
+            "pass_completed": pass_completed,
+            "pass_intercepted": pass_intercepted,
         }
         return self._get_obs(), float(reward), terminated, truncated, info
 
     def _apply_rl_actions(self, actions: np.ndarray) -> None:
         for i, action in enumerate(actions):
-            if action == 9:  # kick toward the left goal
+            # Shoot toward the center of the left goal.
+            if action == 9:
                 if self.possessor == ("rl", i):
                     target = np.array([0.0, 300.0], dtype=np.float32)
+                    self.pending_pass = None
                     self._kick(i, "rl", target)
+                continue
+
+            # Actions 10-14 mean pass to RL teammates 0-4.
+            if 10 <= action <= 14:
+                receiver_index = int(action - 10)
+
+                # Only the player with possession can pass.
+                if self.possessor != ("rl", i):
+                    continue
+
+                # Do not allow a player to pass to itself.
+                if receiver_index == i:
+                    continue
+
+                self.pending_pass = (i, receiver_index)
+
+                target = self.rl_pos[receiver_index].copy()
+                self._kick(i, "rl", target)
                 continue
 
             direction = self.MOVE_DIRECTIONS[action].copy()
             norm = float(np.linalg.norm(direction))
+
             if norm > 0:
                 direction /= norm
                 self.rl_facing[i] = direction
@@ -229,6 +285,30 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.possessor = None
         self.ball_vel = delta / norm * self.KICK_SPEED
+
+    def _resolve_pending_pass(self) -> tuple[bool, bool]:
+        """
+        Check whether a pass in flight has been completed or intercepted.
+
+        Returns:
+            (completed, intercepted)
+        """
+        if self.pending_pass is None:
+            return False, False
+
+        # Ball is still free, so the pass is still in flight.
+        if self.possessor is None:
+            return False, False
+
+        _, receiver_index = self.pending_pass
+
+        if self.possessor == ("rl", receiver_index):
+            self.pending_pass = None
+            return True, False
+
+        # Somebody other than the intended teammate got the ball.
+        self.pending_pass = None
+        return False, True
 
     def _update_free_ball(self) -> None:
         if self.possessor is not None:
@@ -312,6 +392,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self.ball_pos[:] = (600.0, 300.0)
         self.ball_vel[:] = 0.0
         self.possessor = None
+        self.pending_pass = None
 
     def _clamp_player(self, pos: np.ndarray) -> None:
         pos[0] = np.clip(pos[0], 0.0, self.WIDTH)

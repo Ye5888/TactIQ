@@ -214,9 +214,9 @@ def test_observation_after_reset_is_valid() -> None:
     assert np.all(obs >= -1.0)
     assert np.all(obs <= 1.0)
     assert env.observation_space.contains(obs)
-    
-    
-def test_valid_kick_gets_positive_reward() -> None:
+
+
+def test_valid_shot_gets_positive_reward() -> None:
     env = SoccerEnv()
     env.reset()
 
@@ -229,11 +229,209 @@ def test_valid_kick_gets_positive_reward() -> None:
 
     assert reward > 0
 
-def test_invalid_kick_gets_penalty() -> None:
+
+def test_invalid_shot_gets_penalty() -> None:
     env = SoccerEnv()
     env.reset()
 
     actions = np.array([9, 0, 0, 0, 0])
+
+    _, reward, _, _, _ = env.step(actions)
+
+    assert reward < 0
+
+
+def test_rl_player_can_pass_to_teammate() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    # Player 0 has possession.
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    # Action 11 = pass to teammate 1.
+    actions = np.array([11, 0, 0, 0, 0])
+
+    env._apply_rl_actions(actions)
+
+    # Ball should leave the passer's possession.
+    assert env.possessor is None
+
+    # Environment should remember who the pass is intended for.
+    assert env.pending_pass == (0, 1)
+
+    # Ball should now be moving.
+    assert np.linalg.norm(env.ball_vel) > 0
+
+
+def test_non_possessor_cannot_pass() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    # Player 0 has possession.
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    original_velocity = env.ball_vel.copy()
+
+    # Player 1 tries to pass to player 2.
+    # Action 12 = pass to teammate 2.
+    actions = np.array([0, 12, 0, 0, 0])
+
+    env._apply_rl_actions(actions)
+
+    # Player 0 should still have possession.
+    assert env.possessor == ("rl", 0)
+
+    # No pass should have started.
+    assert env.pending_pass is None
+
+    assert np.allclose(env.ball_vel, original_velocity)
+
+
+def test_non_possessor_cannot_pass() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    # Player 0 has possession.
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    original_velocity = env.ball_vel.copy()
+
+    # Player 1 tries to pass to player 2.
+    # Action 12 = pass to teammate 2.
+    actions = np.array([0, 12, 0, 0, 0])
+
+    env._apply_rl_actions(actions)
+
+    # Player 0 should still have possession.
+    assert env.possessor == ("rl", 0)
+
+    # No pass should have started.
+    assert env.pending_pass is None
+
+    assert np.allclose(env.ball_vel, original_velocity)
+
+
+def test_self_pass_does_nothing() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    original_velocity = env.ball_vel.copy()
+
+    # Action 10 = pass to teammate 0.
+    # Since player 0 is the possessor, this would be a self-pass.
+    actions = np.array([10, 0, 0, 0, 0])
+
+    env._apply_rl_actions(actions)
+
+    assert env.possessor == ("rl", 0)
+    assert env.pending_pass is None
+    assert np.allclose(env.ball_vel, original_velocity)
+
+
+def test_completed_pass_gets_positive_reward() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    # Put the passer and receiver close together so the pass
+    # can be completed within one simulation step.
+    env.rl_pos[0] = np.array([600.0, 300.0], dtype=np.float32)
+    env.rl_pos[1] = np.array([545.0, 300.0], dtype=np.float32)
+
+    # Make player 0 face left.
+    env.rl_facing[0] = np.array([-1.0, 0.0], dtype=np.float32)
+
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    # Player 0 passes to player 1.
+    actions = np.array([11, 0, 0, 0, 0])
+
+    _, reward, _, _, info = env.step(actions)
+
+    assert info["pass_completed"] is True
+    assert info["pass_intercepted"] is False
+
+    assert env.possessor == ("rl", 1)
+
+    # Completed pass contributes +0.03 reward.
+    assert reward >= 0.03
+
+
+def test_intercepted_pass_does_not_get_completion_reward() -> None:
+    env = SoccerEnv()
+    env.reset()
+
+    env.rl_pos[0] = np.array([600.0, 300.0], dtype=np.float32)
+    env.rl_pos[1] = np.array([500.0, 300.0], dtype=np.float32)
+
+    env.rl_facing[0] = np.array([-1.0, 0.0], dtype=np.float32)
+
+    # Put a scripted player between the passer and receiver.
+    env.user_pos[0] = np.array([545.0, 300.0], dtype=np.float32)
+
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    # Player 0 passes toward player 1.
+    actions = np.array([11, 0, 0, 0, 0])
+
+    _, reward, _, _, info = env.step(actions)
+
+    assert info["pass_completed"] is False
+    assert info["pass_intercepted"] is True
+
+    assert env.possessor is not None
+    assert env.possessor[0] == "user"
+
+    # The intercepted pass should not receive the +0.03 completion reward.
+    assert reward < 0.03
+
+
+def test_action_space_supports_passing() -> None:
+    env = SoccerEnv()
+
+    valid_actions = np.array([0, 9, 10, 11, 14], dtype=np.int64)
+
+    assert env.action_space.contains(valid_actions)
+
+    invalid_actions = np.array([0, 9, 10, 11, 15], dtype=np.int64)
+
+    assert not env.action_space.contains(invalid_actions)
+    
+def test_non_possessor_pass_gets_penalty():
+    env = SoccerEnv()
+    env.reset()
+
+    # RL player 0 has possession.
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    # Player 1 tries to pass to player 2.
+    # Action 12 = pass-to-2.
+    # Player 1 does not have the ball, so this should be invalid.
+    actions = np.array([0, 12, 0, 0, 0])
+
+    _, reward, _, _, _ = env.step(actions)
+
+    assert reward < 0
+    
+def test_self_pass_gets_penalty():
+    env = SoccerEnv()
+    env.reset()
+
+    # RL player 0 has possession.
+    env.possessor = ("rl", 0)
+    env._attach_ball_to_possessor()
+
+    # Action 10 = pass-to-0.
+    # Since player 0 already has the ball, this is a self-pass.
+    actions = np.array([10, 0, 0, 0, 0])
 
     _, reward, _, _, _ = env.step(actions)
 
@@ -254,8 +452,16 @@ def run_tests() -> None:
         test_ball_bounces_off_top_wall,
         test_match_truncates_after_time_limit,
         test_observation_after_reset_is_valid,
-        test_valid_kick_gets_positive_reward,
-        test_invalid_kick_gets_penalty
+        test_valid_shot_gets_positive_reward,
+        test_invalid_shot_gets_penalty,
+        test_rl_player_can_pass_to_teammate,
+        test_non_possessor_cannot_pass,
+        test_self_pass_does_nothing,
+        test_completed_pass_gets_positive_reward,
+        test_intercepted_pass_does_not_get_completion_reward,
+        test_action_space_supports_passing,
+        test_non_possessor_pass_gets_penalty,
+        test_self_pass_gets_penalty,
     ]
 
     passed = 0
