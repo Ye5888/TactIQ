@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import numpy as np
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
 
 from soccer_env import SoccerEnv
 
@@ -30,7 +30,7 @@ ACTION_NAMES = [
 
 def main(episodes: int = 20) -> None:
     env = SoccerEnv()
-    model = PPO.load(MODEL_PATH)
+    model = MaskablePPO.load(MODEL_PATH)
 
     wins = draws = losses = 0
     total_rl = total_user = 0
@@ -50,6 +50,9 @@ def main(episodes: int = 20) -> None:
     rl_dribble_goals = 0
     rl_shot_goals = 0
     rl_other_goals = 0
+    
+    rl_possession_x = []
+    shot_x_positions = []
 
     min_ball_x = env.WIDTH
     max_ball_x = 0.0
@@ -104,9 +107,12 @@ def main(episodes: int = 20) -> None:
         last_ball_action = None
 
         while not done:
+            action_masks = env.action_masks()
+
             action, _ = model.predict(
                 obs,
                 deterministic=True,
+                action_masks=action_masks,
             )
 
             # Count all actions selected by the RL team.
@@ -142,6 +148,20 @@ def main(episodes: int = 20) -> None:
                 last_ball_action = "scripted_kick"
 
             previous_rl_score = env.rl_score
+            
+            if env.possessor is not None and env.possessor[0] == "rl":
+                possessor_index = env.possessor[1]
+                rl_possession_x.append(float(env.rl_pos[possessor_index][0]))
+                
+            # Record the location of actual RL shots before env.step(),
+            # because shooting clears possession.
+            if env.possessor is not None and env.possessor[0] == "rl":
+                shooter_index = env.possessor[1]
+
+                if action[shooter_index] == 9:
+                    shot_x_positions.append(
+                        float(env.rl_pos[shooter_index][0])
+                    )
 
             obs, _, terminated, truncated, info = env.step(action)
             if info["pass_completed"]:
@@ -226,11 +246,33 @@ def main(episodes: int = 20) -> None:
     print(f"Dribble goals: {rl_dribble_goals}")
     print(f"Shot goals: {rl_shot_goals}")
     print(f"Other goals: {rl_other_goals}")
+    
+    print("\nRL possession positions:")
+
+    if rl_possession_x:
+        print(f"Minimum x: {min(rl_possession_x):.1f}")
+        print(f"Average x: {np.mean(rl_possession_x):.1f}")
+
+        close_possessions = sum(x <= 400 for x in rl_possession_x)
+
+        print(f"Possession steps at x <= 400: {close_possessions}")
 
     print()
     print("Ball horizontal range:")
     print(f"Minimum x: {min_ball_x:.1f}")
     print(f"Maximum x: {max_ball_x:.1f}")
+    
+    print("\nRL shot positions:")
+
+    if shot_x_positions:
+        print(f"Minimum x: {min(shot_x_positions):.1f}")
+        print(f"Average x: {np.mean(shot_x_positions):.1f}")
+        print(f"Maximum x: {max(shot_x_positions):.1f}")
+        
+    print(f"Shots x 0-100:   {sum(0 <= x <= 100 for x in shot_x_positions)}")
+    print(f"Shots x 100-200: {sum(100 < x <= 200 for x in shot_x_positions)}")
+    print(f"Shots x 200-300: {sum(200 < x <= 300 for x in shot_x_positions)}")
+    print(f"Shots x 300-400: {sum(300 < x <= 400 for x in shot_x_positions)}")
 
     print()
     print("RL action usage:")
