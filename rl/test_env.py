@@ -258,7 +258,9 @@ def test_rl_player_can_pass_to_teammate() -> None:
     assert env.possessor is None
 
     # Environment should remember who the pass is intended for.
-    assert env.pending_pass == (0, 1)
+    assert env.pending_pass is not None
+    assert env.pending_pass[0] == 0
+    assert env.pending_pass[1] == 1
 
     # Ball should now be moving.
     assert np.linalg.norm(env.ball_vel) > 0
@@ -411,6 +413,88 @@ def test_self_pass_gets_penalty():
 
     assert reward < 0
 
+def test_non_possessor_ball_actions_are_masked():
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+
+    masks = env.action_masks()
+
+    # Each player gets 15 mask entries.
+    player_1_mask = masks[15:30]
+
+    # Player 1 does not possess the ball.
+    assert np.all(player_1_mask[:9])
+    assert not np.any(player_1_mask[9:15])
+
+
+def test_possessor_can_shoot_and_pass():
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+
+    # Put the possessor in the attacking half so shooting is legal.
+    env.rl_pos[0] = np.array([400.0, 300.0], dtype=np.float32)
+
+    masks = env.action_masks()
+
+    player_0_mask = masks[0:15]
+
+    # Idle/movement + shooting should be valid.
+    assert np.all(player_0_mask[:10])
+
+    # Cannot pass to itself.
+    assert player_0_mask[10] == False
+
+    # Can pass to all other teammates.
+    assert np.all(player_0_mask[11:15])
+    
+def test_shoot_is_masked_outside_attacking_half():
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+
+    # RL attacks left, so x=900 is too far from the target goal.
+    env.rl_pos[0] = np.array([900.0, 300.0], dtype=np.float32)
+
+    masks = env.action_masks()
+    player_0_mask = masks[:15]
+
+    assert player_0_mask[9] == False
+    
+def test_shoot_is_allowed_in_attacking_half():
+    env = SoccerEnv()
+    env.reset()
+
+    env.possessor = ("rl", 0)
+
+    # x=400 is inside the attacking half.
+    env.rl_pos[0] = np.array([400.0, 300.0], dtype=np.float32)
+
+    masks = env.action_masks()
+    player_0_mask = masks[:15]
+
+    assert player_0_mask[9] == True
+    
+def test_dribbling_across_goal_line_does_not_score():
+    env = SoccerEnv()
+    env.reset()
+
+    env.rl_pos[0] = np.array([0.0, 300.0], dtype=np.float32)
+    env.rl_facing[0] = np.array([-1.0, 0.0], dtype=np.float32)
+    env.possessor = ("rl", 0)
+
+    env._attach_ball_to_possessor()
+
+    reward = env._handle_goal_if_needed()
+
+    assert env.rl_score == 0
+    assert reward == 0.0
+    assert env.ball_pos[0] >= 0.0
+
 
 def run_tests() -> None:
     tests = [
@@ -436,6 +520,11 @@ def run_tests() -> None:
         test_action_space_supports_passing,
         test_non_possessor_pass_gets_penalty,
         test_self_pass_gets_penalty,
+        test_non_possessor_ball_actions_are_masked,
+        test_possessor_can_shoot_and_pass,
+        test_shoot_is_masked_outside_attacking_half,
+        test_shoot_is_allowed_in_attacking_half,
+        test_dribbling_across_goal_line_does_not_score,
     ]
 
     passed = 0

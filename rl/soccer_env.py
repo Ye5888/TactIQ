@@ -94,7 +94,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self.ball_pos = np.zeros(2, dtype=np.float32)
         self.ball_vel = np.zeros(2, dtype=np.float32)
         self.possessor: tuple[str, int] | None = None
-        self.pending_pass: tuple[int, int] | None = None
+        self.pending_pass: tuple[int, int, float] | None = None
         self.rl_score = 0
         self.user_score = 0
         self.steps = 0
@@ -173,7 +173,9 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self._update_free_ball()
         self._update_possession()
 
-        pass_completed, pass_intercepted = self._resolve_pending_pass()
+        pass_completed, pass_intercepted, pass_progress = (
+            self._resolve_pending_pass()
+        )   
 
         self._attach_ball_to_possessor()
 
@@ -182,7 +184,10 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         reward = goal_reward
 
         if pass_completed:
-            reward += 0.03
+            reward += 0.02
+
+            # Extra reward for a completed pass that moves the attack forward.
+            reward += 0.10 * pass_progress
 
         if valid_shot:
             reward += 0.05
@@ -219,15 +224,62 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             "pass_intercepted": pass_intercepted,
         }
         return self._get_obs(), float(reward), terminated, truncated, info
+    
+    def action_masks(self) -> np.ndarray:
+        """
+        Return valid actions for each RL player.
+
+        Each player has 15 possible actions:
+        0-8   = idle/movement
+        9     = shoot
+        10-14 = pass to RL players 0-4
+
+        MaskablePPO expects the masks for a MultiDiscrete action space
+        concatenated into one flat array.
+        """
+        masks = []
+
+        for i in range(self.N_PLAYERS):
+            player_mask = np.ones(self.N_ACTIONS_PER_PLAYER, dtype=bool)
+
+            # If this player does not have possession, it cannot shoot or pass.
+            if self.possessor != ("rl", i):
+                player_mask[9:15] = False
+
+            else:
+                # Possessor can shoot and pass, but cannot pass to itself.
+                self_pass_action = 10 + i
+                player_mask[self_pass_action] = False
+
+                # RL attacks the left goal.
+                # Only allow shooting once the player reaches the attacking half.
+                if self.rl_pos[i][0] > self.WIDTH / 3:
+                    player_mask[9] = False
+
+            masks.extend(player_mask)
+
+        return np.array(masks, dtype=bool)
 
     def _apply_rl_actions(self, actions: np.ndarray) -> None:
         for i, action in enumerate(actions):
             # Shoot toward the center of the left goal.
+            # Shoot toward the left goal with distance-based inaccuracy.
             if action == 9:
                 if self.possessor == ("rl", i):
-                    target = np.array([0.0, 300.0], dtype=np.float32)
+                    distance_from_goal = float(self.rl_pos[i][0])
+
+                    # Shots become less accurate from farther away.
+                    shot_error_std = 10.0 + 0.08 * distance_from_goal
+                    y_error = self.np_random.normal(0.0, shot_error_std)
+
+                    target = np.array(
+                        [-50.0, 300.0 + y_error],
+                        dtype=np.float32,
+                    )
+
                     self.pending_pass = None
                     self._kick(i, "rl", target)
+
                 continue
 
             # Actions 10-14 mean pass to RL teammates 0-4.
@@ -242,7 +294,11 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 if receiver_index == i:
                     continue
 
-                self.pending_pass = (i, receiver_index)
+                self.pending_pass = (
+                    i,
+                    receiver_index,
+                    float(self.rl_pos[i][0]),
+                )
 
                 target = self.rl_pos[receiver_index].copy()
                 self._kick(i, "rl", target)
@@ -262,7 +318,10 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         # the ball, and the possessor shoots at the right goal.
         for i in range(self.N_PLAYERS):
             if self.possessor == ("user", i):
-                target = np.array([self.WIDTH, 300.0], dtype=np.float32)
+                target = np.array(
+                    [self.WIDTH + 50.0, 300.0],
+                    dtype=np.float32,
+                )
                 self._kick(i, "user", target)
                 continue
 
@@ -286,29 +345,37 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self.possessor = None
         self.ball_vel = delta / norm * self.KICK_SPEED
 
-    def _resolve_pending_pass(self) -> tuple[bool, bool]:
+    def _resolve_pending_pass(self) -> tuple[bool, bool, float]:
         """
         Check whether a pass in flight has been completed or intercepted.
 
         Returns:
-            (completed, intercepted)
+            (completed, intercepted, forward_progress)
         """
         if self.pending_pass is None:
-            return False, False
+            return False, False, 0.0
 
         # Ball is still free, so the pass is still in flight.
         if self.possessor is None:
-            return False, False
+            return False, False, 0.0
 
-        _, receiver_index = self.pending_pass
+        _, receiver_index, pass_start_x = self.pending_pass
 
         if self.possessor == ("rl", receiver_index):
+            receiver_x = float(self.rl_pos[receiver_index][0])
+
+            # RL attacks left, so a smaller x means forward progress.
+            forward_progress = max(
+                0.0,
+                (pass_start_x - receiver_x) / self.WIDTH,
+            )
+
             self.pending_pass = None
-            return True, False
+            return True, False, forward_progress
 
         # Somebody other than the intended teammate got the ball.
         self.pending_pass = None
-        return False, True
+        return False, True, 0.0
 
     def _update_free_ball(self) -> None:
         if self.possessor is not None:
@@ -366,10 +433,22 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             pos = self.user_pos[i]
             facing = self.user_facing[i]
 
-        self.ball_pos = pos + facing * 15.0
+        attached_pos = pos + facing * 15.0
+
+        # While a player possesses the ball, keep the ball inside the field.
+        # A goal should require the ball to be kicked across the goal line,
+        # not carried across while attached to a player.
+        attached_pos[0] = np.clip(attached_pos[0], 0.0, self.WIDTH)
+        attached_pos[1] = np.clip(attached_pos[1], 0.0, self.HEIGHT)
+
+        self.ball_pos = attached_pos
         self.ball_vel[:] = 0.0
 
     def _handle_goal_if_needed(self) -> float:
+        # A possessed ball cannot score.
+        if self.possessor is not None:
+            return 0.0
+        
         in_goal_mouth = self.GOAL_Y_MIN <= self.ball_pos[1] <= self.GOAL_Y_MAX
         if not in_goal_mouth:
             return 0.0

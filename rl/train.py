@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from stable_baselines3 import PPO
+from sb3_contrib import MaskablePPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.vec_env import DummyVecEnv
 
@@ -18,7 +18,7 @@ def main() -> None:
 
     env = DummyVecEnv([lambda: SoccerEnv()])
 
-    model = PPO(
+    model = MaskablePPO(
         "MlpPolicy",
         env,
         verbose=1,
@@ -31,7 +31,7 @@ def main() -> None:
         tensorboard_log=str(ROOT / "runs"),
     )
 
-    model.learn(total_timesteps=500_000, progress_bar=True)
+    model.learn(total_timesteps=100_000, progress_bar=True)
     model.save(MODEL_DIR / "tactiq_opponent")
 
 
