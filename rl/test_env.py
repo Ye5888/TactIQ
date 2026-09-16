@@ -220,6 +220,8 @@ def test_valid_shot_gets_positive_reward() -> None:
     env = SoccerEnv()
     env.reset()
 
+    env.rl_pos[0] = np.array([200.0, 300.0], dtype=np.float32)
+
     env.possessor = ("rl", 0)
     env._attach_ball_to_possessor()
 
