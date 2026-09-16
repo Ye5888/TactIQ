@@ -7,7 +7,7 @@ from soccer_env import SoccerEnv
 
 
 ROOT = Path(__file__).resolve().parent
-MODEL_PATH = ROOT / "models" / "tactiq_opponent.zip"
+MODEL_PATH = ROOT / "models" / "baseline_500k.zip"
 
 ACTION_NAMES = [
     "idle",

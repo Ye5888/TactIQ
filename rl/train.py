@@ -31,8 +31,8 @@ def main() -> None:
         tensorboard_log=str(ROOT / "runs"),
     )
 
-    model.learn(total_timesteps=100_000, progress_bar=True)
-    model.save(MODEL_DIR / "tactiq_opponent")
+    model.learn(total_timesteps=500_000, progress_bar=True)
+    model.save(MODEL_DIR / "baseline_500k")
 
 
 if __name__ == "__main__":

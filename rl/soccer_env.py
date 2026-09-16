@@ -128,11 +128,24 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self.steps += 1
         previous_ball_x = float(self.ball_pos[0])
         previous_possessor = self.possessor
+        
+        receiver_distance_before = None
+        pending_receiver_index = None
+
+        if self.pending_pass is not None and self.possessor is None:
+            _, pending_receiver_index, _ = self.pending_pass
+
+            receiver_distance_before = float(
+                np.linalg.norm(
+                    self.rl_pos[pending_receiver_index] - self.ball_pos
+                )
+            )
 
         actions = np.asarray(action, dtype=np.int64)
 
         # Reward a kick from the RL player who actually has possession.
         valid_shot = False
+        shooter_x = None
         invalid_shots = 0
         invalid_passes = 0
 
@@ -145,6 +158,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 if player_action == 9:
                     if i == possessor_index:
                         valid_shot = True
+                        shooter_x = float(self.rl_pos[i][0])
                     else:
                         invalid_shots += 1
 
@@ -173,6 +187,28 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         self._update_free_ball()
         self._update_possession()
 
+        receiver_progress_reward = 0.0
+
+        if (
+            receiver_distance_before is not None
+            and pending_receiver_index is not None
+            and self.pending_pass is not None
+            and self.possessor is None
+        ):
+            receiver_distance_after = float(
+                np.linalg.norm(
+                    self.rl_pos[pending_receiver_index] - self.ball_pos
+                )
+            )
+
+            distance_closed = (
+                receiver_distance_before - receiver_distance_after
+            )
+
+            receiver_progress_reward = (
+                0.10 * distance_closed / self.WIDTH
+            )
+
         pass_completed, pass_intercepted, pass_progress = (
             self._resolve_pending_pass()
         )   
@@ -182,15 +218,21 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         goal_reward = self._handle_goal_if_needed()
 
         reward = goal_reward
+        reward += receiver_progress_reward
 
         if pass_completed:
-            reward += 0.02
-
-            # Extra reward for a completed pass that moves the attack forward.
+            reward += 0.04
             reward += 0.10 * pass_progress
 
-        if valid_shot:
-            reward += 0.05
+        if valid_shot and shooter_x is not None:
+            shooting_range = self.WIDTH / 3.0
+
+            shot_quality = max(
+                0.0,
+                (shooting_range - shooter_x) / shooting_range,
+            )
+
+            reward += 0.01 + 0.04 * shot_quality
 
         # This penalizes shooting/passing too much
         reward -= 0.001 * invalid_shots
