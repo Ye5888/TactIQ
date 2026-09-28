@@ -18,21 +18,19 @@ def main() -> None:
 
     env = DummyVecEnv([lambda: SoccerEnv()])
 
-    model = MaskablePPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=256,
-        gamma=0.99,
-        gae_lambda=0.95,
-        ent_coef=0.01,
-        tensorboard_log=str(ROOT / "runs"),
+    model = MaskablePPO.load(
+        MODEL_DIR / "role_randomized_scratch_500k.zip",
+        env=env,
     )
 
-    model.learn(total_timesteps=500_000, progress_bar=True)
-    model.save(MODEL_DIR / "baseline_500k")
+    model.learn(
+        total_timesteps=1_000_000,
+        reset_num_timesteps=False,
+    )
+
+    model.save(
+        MODEL_DIR / "role_randomized_scratch_1500k.zip"
+    )
 
 
 if __name__ == "__main__":

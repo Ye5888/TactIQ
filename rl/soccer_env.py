@@ -110,8 +110,8 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
     ) -> tuple[np.ndarray, dict[str, Any]]:
         super().reset(seed=seed)
 
-        self.user_pos = self.LEFT_START.copy()
-        self.rl_pos = self.RIGHT_START.copy()
+        self._reset_player_positions()
+
         self.rl_facing[:] = (-1.0, 0.0)
         self.user_facing[:] = (1.0, 0.0)
         self.ball_pos[:] = (600.0, 300.0)
@@ -127,18 +127,17 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
     def step(self, action: np.ndarray):
         self.steps += 1
         previous_ball_x = float(self.ball_pos[0])
-        previous_possessor = self.possessor
-        
+
         receiver_distance_before = None
         pending_receiver_index = None
+        
+        scripted_kick = False
 
         if self.pending_pass is not None and self.possessor is None:
             _, pending_receiver_index, _ = self.pending_pass
 
             receiver_distance_before = float(
-                np.linalg.norm(
-                    self.rl_pos[pending_receiver_index] - self.ball_pos
-                )
+                np.linalg.norm(self.rl_pos[pending_receiver_index] - self.ball_pos)
             )
 
         actions = np.asarray(action, dtype=np.int64)
@@ -178,12 +177,10 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             # RL does not have possession, so all shoot/pass actions are invalid.
             invalid_shots = int(np.sum(actions == 9))
 
-            invalid_passes = int(
-                np.sum((actions >= 10) & (actions <= 14))
-            )
+            invalid_passes = int(np.sum((actions >= 10) & (actions <= 14)))
 
         self._apply_rl_actions(actions)
-        self._apply_scripted_user()
+        scripted_kick = self._apply_scripted_user()
         self._update_free_ball()
         self._update_possession()
 
@@ -196,22 +193,14 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             and self.possessor is None
         ):
             receiver_distance_after = float(
-                np.linalg.norm(
-                    self.rl_pos[pending_receiver_index] - self.ball_pos
-                )
+                np.linalg.norm(self.rl_pos[pending_receiver_index] - self.ball_pos)
             )
 
-            distance_closed = (
-                receiver_distance_before - receiver_distance_after
-            )
+            distance_closed = receiver_distance_before - receiver_distance_after
 
-            receiver_progress_reward = (
-                0.10 * distance_closed / self.WIDTH
-            )
+            receiver_progress_reward = 0.10 * distance_closed / self.WIDTH
 
-        pass_completed, pass_intercepted, pass_progress = (
-            self._resolve_pending_pass()
-        )   
+        pass_completed, pass_intercepted, pass_progress = self._resolve_pending_pass()
 
         self._attach_ball_to_possessor()
 
@@ -219,10 +208,6 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
 
         reward = goal_reward
         reward += receiver_progress_reward
-
-        if pass_completed:
-            reward += 0.04
-            reward += 0.10 * pass_progress
 
         if valid_shot and shooter_x is not None:
             shooting_range = self.WIDTH / 3.0
@@ -232,7 +217,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 (shooting_range - shooter_x) / shooting_range,
             )
 
-            reward += 0.01 + 0.04 * shot_quality
+            reward += 0.2 * shot_quality
 
         # This penalizes shooting/passing too much
         reward -= 0.001 * invalid_shots
@@ -243,12 +228,6 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         if self.possessor is not None and self.possessor[0] == "rl":
             progress = (previous_ball_x - float(self.ball_pos[0])) / self.WIDTH
             reward += 0.08 * progress
-
-        if previous_possessor != self.possessor:
-            if self.possessor is not None and self.possessor[0] == "rl":
-                reward += 0.03
-            elif self.possessor is not None and self.possessor[0] == "user":
-                reward -= 0.03
 
         terminated = False
         truncated = self.steps >= self.MAX_STEPS
@@ -264,9 +243,10 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
             "possessor": self.possessor,
             "pass_completed": pass_completed,
             "pass_intercepted": pass_intercepted,
+            "scripted_kick": scripted_kick,
         }
         return self._get_obs(), float(reward), terminated, truncated, info
-    
+
     def action_masks(self) -> np.ndarray:
         """
         Return valid actions for each RL player.
@@ -293,17 +273,30 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 self_pass_action = 10 + i
                 player_mask[self_pass_action] = False
 
-                # RL attacks the left goal.
-                # Only allow shooting once the player reaches the attacking half.
-                if self.rl_pos[i][0] > self.WIDTH / 3:
-                    player_mask[9] = False
-
             masks.extend(player_mask)
 
         return np.array(masks, dtype=bool)
 
     def _apply_rl_actions(self, actions: np.ndarray) -> None:
         for i, action in enumerate(actions):
+            # If this player is the intended receiver of a pass currently
+            # in flight, move toward the ball instead of following its
+            # normal PPO movement action.
+            if self.pending_pass is not None and self.possessor is None:
+                _, receiver_index, _ = self.pending_pass
+
+                if i == receiver_index:
+                    delta = self.ball_pos - self.rl_pos[i]
+                    distance = float(np.linalg.norm(delta))
+
+                    if distance > 1e-6:
+                        direction = delta / distance
+                        self.rl_facing[i] = direction
+                        self.rl_pos[i] += direction * self.RL_SPEED * self.DT
+                        self._clamp_player(self.rl_pos[i])
+
+                continue
+
             # Shoot toward the center of the left goal.
             # Shoot toward the left goal with distance-based inaccuracy.
             if action == 9:
@@ -343,6 +336,14 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 )
 
                 target = self.rl_pos[receiver_index].copy()
+
+                # Lead the pass 60px toward the attacking goal.
+                # RL attacks left, so smaller x = forward.
+                target[0] -= 60.0
+
+                # Don't aim outside the field.
+                target[0] = max(0.0, target[0])
+
                 self._kick(i, "rl", target)
                 continue
 
@@ -354,26 +355,153 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
                 self.rl_facing[i] = direction
                 self.rl_pos[i] += direction * self.RL_SPEED * self.DT
                 self._clamp_player(self.rl_pos[i])
+                
+    # def _apply_scripted_user(self) -> None:
+    #     for i in range(self.N_PLAYERS):
+    #         if self.possessor == ("user", i):
+    #             target = np.array(
+    #                 [self.WIDTH + 50.0, 300.0],
+    #                 dtype=np.float32,
+    #             )
+    #             self._kick(i, "user", target)
+    #             continue
+
+    #         delta = self.ball_pos - self.user_pos[i]
+    #         distance = float(np.linalg.norm(delta))
+
+    #         if distance > 1e-6:
+    #             direction = delta / distance
+    #             self.user_facing[i] = direction
+
+    #             self.user_pos[i] += (
+    #                 direction
+    #                 * self.SCRIPTED_SPEED
+    #                 * self.DT
+    #             )
+
+    #             self._clamp_player(self.user_pos[i])
 
     def _apply_scripted_user(self) -> None:
-        # Baseline opponent used only during training: all white players chase
-        # the ball, and the possessor shoots at the right goal.
+        # Scripted/user team attacks RIGHT.
+        # When defending:
+        #   - closest player pressures the ball
+        #   - everyone else maintains defensive shape
+        # When attacking:
+        #   - ball carrier advances toward goal
+        #   - shoots once inside shooting range
+
+        # Find the scripted player closest to the ball.
+        scripted_kick = False
+        
+        distances = np.linalg.norm(
+            self.user_pos - self.ball_pos,
+            axis=1,
+        )
+        pressure_index = int(np.argmin(distances))
+
         for i in range(self.N_PLAYERS):
+
+            # --------------------------------------------------
+            # PLAYER HAS POSSESSION
+            # --------------------------------------------------
             if self.possessor == ("user", i):
+
+                distance_from_goal = self.WIDTH - self.user_pos[i][0]
+
+                # 1. Shoot when within the final third.
+                if distance_from_goal <= self.WIDTH / 3.0:
+                    target = np.array(
+                        [self.WIDTH + 50.0, 300.0],
+                        dtype=np.float32,
+                    )
+
+                    self._kick(i, "user", target)
+                    scripted_kick = True
+                    continue
+
+                # 2. Look for a useful forward pass.
+                passer_x = self.user_pos[i][0]
+
+                best_receiver = None
+                best_receiver_x = passer_x
+
+                for j in range(self.N_PLAYERS):
+
+                    if j == i:
+                        continue
+
+                    receiver_x = self.user_pos[j][0]
+
+                    # Scripted team attacks RIGHT.
+                    # Only consider teammates meaningfully ahead of the ball carrier.
+                    if receiver_x > passer_x + 100.0:
+                        if receiver_x > best_receiver_x:
+                            best_receiver = j
+                            best_receiver_x = receiver_x
+
+                if best_receiver is not None:
+                    target = self.user_pos[best_receiver].copy()
+
+                    # Lead the pass slightly toward the attacking goal.
+                    target[0] += 60.0
+
+                    self._kick(i, "user", target)
+                    scripted_kick = True
+                    continue
+
+                # 3. No good forward pass -> dribble toward goal.
                 target = np.array(
-                    [self.WIDTH + 50.0, 300.0],
+                    [self.WIDTH, 300.0],
                     dtype=np.float32,
-                )
-                self._kick(i, "user", target)
+        )
+
+                self._move_scripted_player(i, target)
                 continue
 
-            delta = self.ball_pos - self.user_pos[i]
-            distance = float(np.linalg.norm(delta))
-            if distance > 1e-6:
-                direction = delta / distance
-                self.user_facing[i] = direction
-                self.user_pos[i] += direction * self.SCRIPTED_SPEED * self.DT
-                self._clamp_player(self.user_pos[i])
+            # --------------------------------------------------
+            # DEFENDING
+            # --------------------------------------------------
+
+            # Closest player pressures the ball.
+            if i == pressure_index:
+                self._move_scripted_player(i, self.ball_pos)
+                continue
+
+            # Everyone else recovers toward their formation.
+            #
+            # LEFT_START is the scripted team's natural formation.
+            # Shift it somewhat toward the ball so the entire team
+            # isn't completely static.
+            target = self.LEFT_START[i].copy()
+
+            ball_shift = (self.ball_pos[0] - self.WIDTH / 2.0) * 0.25
+            target[0] += ball_shift
+
+            self._move_scripted_player(i, target)
+        return scripted_kick
+            
+    def _move_scripted_player(
+        self,
+        index: int,
+        target: np.ndarray,
+    ) -> None:
+        delta = target - self.user_pos[index]
+        distance = float(np.linalg.norm(delta))
+
+        if distance <= 1e-6:
+            return
+
+        direction = delta / distance
+
+        self.user_facing[index] = direction
+
+        self.user_pos[index] += (
+            direction
+            * self.SCRIPTED_SPEED
+            * self.DT
+        )
+
+        self._clamp_player(self.user_pos[index])
 
     def _kick(self, index: int, team: str, target: np.ndarray) -> None:
         if self.possessor != (team, index):
@@ -490,7 +618,7 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         # A possessed ball cannot score.
         if self.possessor is not None:
             return 0.0
-        
+
         in_goal_mouth = self.GOAL_Y_MIN <= self.ball_pos[1] <= self.GOAL_Y_MAX
         if not in_goal_mouth:
             return 0.0
@@ -508,12 +636,51 @@ class SoccerEnv(gym.Env[np.ndarray, np.ndarray]):
         return 0.0
 
     def _reset_kickoff(self) -> None:
-        self.user_pos = self.LEFT_START.copy()
-        self.rl_pos = self.RIGHT_START.copy()
+        self._reset_player_positions()
+
+        self.rl_facing[:] = (-1.0, 0.0)
+        self.user_facing[:] = (1.0, 0.0)
+
         self.ball_pos[:] = (600.0, 300.0)
         self.ball_vel[:] = 0.0
         self.possessor = None
         self.pending_pass = None
+        
+    def _reset_player_positions(self) -> None:
+        self.user_pos = self.LEFT_START.copy()
+
+        # Randomly assign RL player IDs to the five formation slots.
+        # Example:
+        #   Player 0 might start in slot 3,
+        #   Player 1 might start in slot 4, etc.
+        #
+        # This prevents PPO from learning that a particular player ID
+        # is always associated with a particular tactical position.
+        permutation = self.np_random.permutation(self.N_PLAYERS)
+
+        self.rl_pos = self.RIGHT_START[permutation].copy()
+
+        # Slightly randomize positions while preserving the formation.
+        jitter = self.np_random.uniform(
+            low=-75.0,
+            high=75.0,
+            size=self.rl_pos.shape,
+        ).astype(np.float32)
+
+        self.rl_pos += jitter
+
+        # Keep RL players inside the field.
+        self.rl_pos[:, 0] = np.clip(
+            self.rl_pos[:, 0],
+            0.0,
+            self.WIDTH,
+        )
+
+        self.rl_pos[:, 1] = np.clip(
+            self.rl_pos[:, 1],
+            0.0,
+            self.HEIGHT,
+        )
 
     def _clamp_player(self, pos: np.ndarray) -> None:
         pos[0] = np.clip(pos[0], 0.0, self.WIDTH)

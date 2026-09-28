@@ -16,3 +16,5 @@ typing_extensions==4.16.0
 tensorboard
 tqdm
 rich
+onnx
+onnxruntime
