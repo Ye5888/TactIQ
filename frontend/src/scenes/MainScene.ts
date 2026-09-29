@@ -2,6 +2,10 @@ import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { ONE_TWO_ONE, formationToWorldPositions, type Formation } from '../data/formations';
 import type { RosterPlayer } from '../data/roster';
+import { buildObservation } from '../rl/observation';
+import { buildActionMask } from '../rl/actionMask';
+import { predictActions } from '../rl/onnxPolicy';
+
 
 type PhysicsCircle = Phaser.GameObjects.Arc & { body: Phaser.Physics.Arcade.Body };
 
@@ -13,7 +17,7 @@ export class MainScene extends Phaser.Scene {
     private ball!: PhysicsCircle;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private spaceKey!: Phaser.Input.Keyboard.Key;
-    private score = { leftNet: 0, rightNet: 0 };
+    private score = { user: 0, rl: 0 };
     private scoreText!: Phaser.GameObjects.Text;
     private timeRemaining = 120; // seconds — a 2 minute match
     private timerText!: Phaser.GameObjects.Text;
@@ -22,6 +26,17 @@ export class MainScene extends Phaser.Scene {
     private squad: RosterPlayer[] = [];
     private nameLabels: Phaser.GameObjects.Text[] = [];
     private possessor: Player | null = null;
+
+    private rlActions: number[] = [0, 0, 0, 0, 0];
+    private lastRLDecisionTime = 0;
+    private rlInferenceRunning = false;
+    
+    private readonly RL_DECISION_INTERVAL = 100; // milliseconds
+    private readonly RL_SPEED = 150;
+    private readonly KICK_SPEED = 400;
+    private pendingPass: {
+        receiverIndex: number;
+    } | null = null;
 
     constructor() {
         super('MainScene'); // scene key — Phaser identifies scenes by string key
@@ -40,27 +55,104 @@ export class MainScene extends Phaser.Scene {
         }
     }
 
-    private createGoalZone(x: number, width: number, height: number, onGoal: () => void) {
-        const zone = this.add.rectangle(x, 300, width, height, 0x0000ff, 0);
+    private createGoalZone(
+        x: number,
+        width: number,
+        height: number,
+        onGoal: () => void
+    ) {
+        const zone = this.add.rectangle(
+            x,
+            300,
+            width,
+            height,
+            0x0000ff,
+            0
+        );
+
         this.physics.add.existing(zone, true);
-        this.physics.add.overlap(this.ball, zone, onGoal);
+
+        this.physics.add.overlap(this.ball, zone, () => {
+            // Match the Python environment:
+            // a possessed ball cannot score.
+            if (this.possessor !== null) {
+                return;
+            }
+
+            onGoal();
+        });
     }
 
     private updateScoreText() {
-        this.scoreText.setText(`${this.score.leftNet} - ${this.score.rightNet}`);
+        this.scoreText.setText(`${this.score.user} - ${this.score.rl}`);
     }
 
     private resetKickoff() {
+        // Reset ball
         this.ball.setPosition(600, 300);
         this.ball.body.setVelocity(0, 0);
-        this.player.setPosition(600, 300);
-        this.player.body.setVelocity(0, 0);
         this.possessor = null;
+        this.pendingPass = null;
+
+        // Reset user team to selected formation
+        const userPositions = formationToWorldPositions(
+            this.chosenFormation,
+            'left'
+        );
+
+        for (let i = 0; i < this.team.length; i++) {
+            this.team[i].setPosition(
+                userPositions[i].x,
+                userPositions[i].y
+            );
+
+            this.team[i].body.setVelocity(0, 0);
+
+            // User attacks toward the right.
+            this.team[i].facing = { x: 1, y: 0 };
+        }
+
+        // Reset RL team
+        const opponentPositions = formationToWorldPositions(
+            ONE_TWO_ONE,
+            'right'
+        );
+
+        for (let i = 0; i < this.opponents.length; i++) {
+            this.opponents[i].setPosition(
+                opponentPositions[i].x,
+                opponentPositions[i].y
+            );
+
+            this.opponents[i].body.setVelocity(0, 0);
+
+            // RL attacks toward the left.
+            this.opponents[i].facing = { x: -1, y: 0 };
+        }
+
+        // Give control back to the first user player.
+        this.player = this.team[0];
+
+        // Don't carry PPO actions over from before the goal.
+        this.rlActions = [0, 0, 0, 0, 0];
     }
 
-    private createWall(x: number, y: number, width: number, height: number) {
-        const wall = this.add.rectangle(x, y, width, height, 0xff0000, 0); // alpha 0 = invisible
-        this.physics.add.existing(wall, true); // true = static body, never moves
+    private createWall(
+        x: number,
+        y: number,
+        width: number,
+        height: number
+    ) {
+        const wall = this.add.rectangle(
+            x,
+            y,
+            width,
+            height,
+            0xff0000,
+            0
+        );
+
+        this.physics.add.existing(wall, true);
         this.physics.add.collider(this.ball, wall);
     }
 
@@ -104,6 +196,11 @@ export class MainScene extends Phaser.Scene {
 
         if (closest !== null) {
             this.possessor = closest;
+
+            // The pass is over once anybody gains possession.
+            if (this.pendingPass !== null) {
+                this.pendingPass = null;
+            }
         }
     }
 
@@ -120,7 +217,293 @@ export class MainScene extends Phaser.Scene {
         this.ball.body.setVelocity(0, 0);
     }
 
+    private createGoalOutline(side: 'left' | 'right') {
+        const depth = 40;
+        const height = 90;
 
+        const x =
+            side === 'left'
+                ? -depth / 2
+                : 1200 + depth / 2;
+
+        this.add
+            .rectangle(
+                x,
+                300,
+                depth,
+                height,
+                0xffffff,
+                0
+            )
+            .setStrokeStyle(4, 0xffffff);
+    }
+
+    private async updateRLPolicy(time: number) {
+        // Only make a new decision every 100 ms.
+        if (time - this.lastRLDecisionTime < this.RL_DECISION_INTERVAL) {
+            return;
+        }
+
+        // Don't start another ONNX inference if one is still running.
+        if (this.rlInferenceRunning) {
+            return;
+        }
+
+        this.lastRLDecisionTime = time;
+        this.rlInferenceRunning = true;
+
+        try {
+            const observation = buildObservation(
+                this.team,
+                this.opponents,
+                this.ball,
+                this.possessor,
+                this.score.user,
+                this.score.rl,
+                this.timeRemaining
+            );
+
+            const actionMask = buildActionMask(
+                this.opponents,
+                this.possessor
+            );
+
+            this.rlActions = await predictActions(
+                observation,
+                actionMask
+            );
+        } catch (error) {
+            console.error("RL inference failed:", error);
+        } finally {
+            this.rlInferenceRunning = false;
+        }
+    }
+
+    private randomNormal(): number {
+        // Box-Muller transform: standard normal distribution
+        let u = 0;
+        let v = 0;
+
+        while (u === 0) {
+            u = Math.random();
+        }
+
+        while (v === 0) {
+            v = Math.random();
+        }
+
+        return (
+            Math.sqrt(-2 * Math.log(u)) *
+            Math.cos(2 * Math.PI * v)
+        );
+    }
+
+    private applyRLPass(
+        passer: Player,
+        passerIndex: number,
+        receiverIndex: number
+    ) {
+        passer.body.setVelocity(0, 0);
+
+        // Only the player with the ball can pass.
+        if (this.possessor !== passer) {
+            return;
+        }
+
+        // Can't pass to yourself.
+        if (receiverIndex === passerIndex) {
+            return;
+        }
+
+        const receiver = this.opponents[receiverIndex];
+
+        if (!receiver) {
+            return;
+        }
+
+        this.pendingPass = {
+            receiverIndex
+        };
+
+        // RL attacks LEFT, so lead the pass 60px toward the left goal.
+        const targetX = Math.max(
+            0,
+            receiver.x - 60
+        );
+
+        const targetY = receiver.y;
+
+        const dx = targetX - this.ball.x;
+        const dy = targetY - this.ball.y;
+
+        const magnitude = Math.sqrt(
+            dx * dx + dy * dy
+        );
+
+        if (magnitude < 0.000001) {
+            this.pendingPass = null;
+            return;
+        }
+
+        // Release the ball.
+        this.possessor = null;
+
+        this.ball.body.setVelocity(
+            (dx / magnitude) * this.KICK_SPEED,
+            (dy / magnitude) * this.KICK_SPEED
+        );
+
+        // TEMP for testing.
+        console.log(
+            `RL PASS: ${passerIndex} -> ${receiverIndex}`
+        );
+    }
+
+    private moveRLReceiverTowardBall(player: Player) {
+        const dx = this.ball.x - player.x;
+        const dy = this.ball.y - player.y;
+
+        const magnitude = Math.sqrt(
+            dx * dx + dy * dy
+        );
+
+        if (magnitude < 0.000001) {
+            player.body.setVelocity(0, 0);
+            return;
+        }
+
+        const dirX = dx / magnitude;
+        const dirY = dy / magnitude;
+
+        player.facing.x = dirX;
+        player.facing.y = dirY;
+
+        player.body.setVelocity(
+            dirX * this.RL_SPEED,
+            dirY * this.RL_SPEED
+        );
+    }
+
+    private applyRLShoot(player: Player) {
+        // Shooting means the player itself stops moving.
+        player.body.setVelocity(0, 0);
+
+        // Only the player currently possessing the ball can shoot.
+        if (this.possessor !== player) {
+            return;
+        }
+
+        // RL attacks the LEFT goal.
+        const distanceFromGoal = player.x;
+
+        // Same distance-based inaccuracy used during training.
+        const shotErrorStd =
+            10 + 0.08 * distanceFromGoal;
+
+        const yError =
+            this.randomNormal() * shotErrorStd;
+
+        // Aim slightly beyond the left goal line.
+        const targetX = -50;
+        const targetY = 300 + yError;
+
+        const dx = targetX - this.ball.x;
+        const dy = targetY - this.ball.y;
+
+        const magnitude = Math.sqrt(
+            dx * dx + dy * dy
+        );
+
+        if (magnitude < 0.000001) {
+            return;
+        }
+
+        this.pendingPass = null;
+
+        // Release possession before kicking.
+        this.possessor = null;
+
+        this.ball.body.setVelocity(
+            (dx / magnitude) * this.KICK_SPEED,
+            (dy / magnitude) * this.KICK_SPEED
+        );
+
+        // TEMP: useful while testing.
+        console.log(
+            "RL SHOT",
+            "from:",
+            player.x,
+            player.y,
+            "target:",
+            targetX,
+            targetY
+        );
+    }
+
+    private applyRLMovement(
+        player: Player,
+        action: number
+    ) {
+        let vx = 0;
+        let vy = 0;
+
+        switch (action) {
+            case 1: // up
+                vy = -this.RL_SPEED;
+                break;
+
+            case 2: // down
+                vy = this.RL_SPEED;
+                break;
+
+            case 3: // left
+                vx = -this.RL_SPEED;
+                break;
+
+            case 4: // right
+                vx = this.RL_SPEED;
+                break;
+
+            case 5: // up-left
+                vx = -this.RL_SPEED;
+                vy = -this.RL_SPEED;
+                break;
+
+            case 6: // up-right
+                vx = this.RL_SPEED;
+                vy = -this.RL_SPEED;
+                break;
+
+            case 7: // down-left
+                vx = -this.RL_SPEED;
+                vy = this.RL_SPEED;
+                break;
+
+            case 8: // down-right
+                vx = this.RL_SPEED;
+                vy = this.RL_SPEED;
+                break;
+
+            // 0 = idle
+            // 9-14 will be handled separately
+        }
+
+        // Python normalizes diagonal movement so it isn't faster.
+        if (vx !== 0 && vy !== 0) {
+            const scale = 1 / Math.sqrt(2);
+            vx *= scale;
+            vy *= scale;
+        }
+
+        if (vx !== 0 || vy !== 0) {
+            const magnitude = Math.sqrt(vx * vx + vy * vy);
+
+            player.facing.x = vx / magnitude;
+            player.facing.y = vy / magnitude;
+        }
+
+        player.body.setVelocity(vx, vy);
+    }
 
     private endMatch() {
         this.player.body.setVelocity(0, 0);
@@ -131,15 +514,15 @@ export class MainScene extends Phaser.Scene {
 
         let resultText: string;
 
-        if (this.score.leftNet > this.score.rightNet) {
-            resultText = 'You Lose!';
-        } else if (this.score.rightNet > this.score.leftNet) {
+        if (this.score.user > this.score.rl) {
             resultText = 'You Win!';
+        } else if (this.score.rl > this.score.user) {
+            resultText = 'You Lose!';
         } else {
             resultText = 'Draw!';
         }
 
-        const banner = this.add.text(400, 300, `${resultText}\nFinal Score: ${this.score.leftNet} - ${this.score.rightNet}`, {
+        const banner = this.add.text(400, 300, `${resultText}\nFinal Score: ${this.score.user} - ${this.score.rl}`, {
             fontSize: '48px',
             color: '#ffffff',
             align: 'center',
@@ -155,7 +538,7 @@ export class MainScene extends Phaser.Scene {
         this.physics.world.setBounds(0, 0, 1200, 600);
 
         // Camera can't scroll past these bounds either — keeps the view locked to the pitch
-        this.cameras.main.setBounds(0, 0, 1200, 600);
+        this.cameras.main.setBounds(-60, 0, 1320, 600);
 
         // Team creation, with different players
         const startingPositions = formationToWorldPositions(this.chosenFormation, 'left');
@@ -201,15 +584,18 @@ export class MainScene extends Phaser.Scene {
         this.createWall(1200 + wallThickness / 2, 472.5, wallThickness, 255);
 
         this.createGoalZone(-40, 40, 100, () => {
-            this.score.leftNet++;
+            this.score.rl++;
             this.updateScoreText();
             this.resetKickoff();
         });
         this.createGoalZone(1240, 40, 100, () => {
-            this.score.rightNet++;
+            this.score.user++;
             this.updateScoreText();
             this.resetKickoff();
         });
+
+        this.createGoalOutline('left');
+        this.createGoalOutline('right');
 
         // Create the score text, horizontally centered near top
         this.scoreText = this.add.text(400, 20, '0 - 0', { fontSize: '32px', color: '#ffffff' }).setOrigin(0.5, 0);
@@ -223,19 +609,19 @@ export class MainScene extends Phaser.Scene {
         this.cursors = this.input.keyboard!.createCursorKeys();
         this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
-        // Player and ball physically collide with each other
-        this.physics.add.collider(this.team, this.ball);
-        this.physics.add.collider(this.opponents, this.ball);
-
         // Camera follows the ball, easing toward it each frame instead of snapping instantly
-        this.cameras.main.startFollow(this.ball, true, 0.08, 0.08);
+        this.cameras.main.startFollow(this.ball, true, 0.08, 0);
+
     }
+
+    
 
     update(_time: number, delta: number) {
         // Update the nearest player
         this.updateControlledPlayer();
         this.updatePossession();
         this.updateBallFollow();
+        void this.updateRLPolicy(_time);
 
         // Update time
         this.timeRemaining -= delta / 1000;
@@ -301,18 +687,41 @@ export class MainScene extends Phaser.Scene {
         }
 
 
-        // Have opponents chase ball, if øne of them has the ball they kick it towards goal
-        const kickSpeed = 400;
+        // RL opponent movement
+        for (let i = 0; i < this.opponents.length; i++) {
+            const opponent = this.opponents[i];
+            const action = this.rlActions[i];
 
-        for (const opponent of this.opponents) {
-            opponent.moveToward(this.ball.x, this.ball.y, 150);
+            // While a pass is flying, the intended receiver chases it.
+            // Other RL players wait, matching the training environment.
+            if (
+                this.pendingPass !== null &&
+                this.possessor === null
+            ) {
+                if (i === this.pendingPass.receiverIndex) {
+                    this.moveRLReceiverTowardBall(opponent);
+                } else {
+                    opponent.body.setVelocity(0, 0);
+                }
 
-            if (this.possessor === opponent) {
-                const dx = 0 - this.ball.x;
-                const dy = 300 - this.ball.y;
-                const magnitude = Math.sqrt(dx * dx + dy * dy);
-                this.possessor = null;
-                this.ball.body.setVelocity((dx / magnitude) * kickSpeed, (dy / magnitude) * kickSpeed);
+                continue;
+            }
+
+            if (action === 9) {
+                this.applyRLShoot(opponent);
+            } else if (action >= 10 && action <= 14) {
+                const receiverIndex = action - 10;
+
+                this.applyRLPass(
+                    opponent,
+                    i,
+                    receiverIndex
+                );
+            } else {
+                this.applyRLMovement(
+                    opponent,
+                    action
+                );
             }
         }
     }
