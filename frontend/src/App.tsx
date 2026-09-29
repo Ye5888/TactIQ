@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { FormationSelectScene } from './scenes/FormationSelectScene';
 import { DraftScene } from './scenes/DraftScene';
 import { MainScene } from './scenes/MainScene';
+import { testRLModel } from "./rl/onnxPolicy";
 
 
 // Took a lot of time for me to understand but here is the flow:
@@ -19,6 +20,8 @@ export function App() {
     if (!gameContainerRef.current) {
       return;
     }
+
+    testRLModel().catch(console.error);
 
     const game = new Phaser.Game({
       type: Phaser.AUTO,

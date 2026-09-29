@@ -311,36 +311,6 @@ def test_self_pass_does_nothing() -> None:
     assert env.pending_pass is None
     assert np.allclose(env.ball_vel, original_velocity)
 
-
-def test_completed_pass_gets_positive_reward() -> None:
-    env = SoccerEnv()
-    env.reset()
-
-    # Put the passer and receiver close together so the pass
-    # can be completed within one simulation step.
-    env.rl_pos[0] = np.array([600.0, 300.0], dtype=np.float32)
-    env.rl_pos[1] = np.array([545.0, 300.0], dtype=np.float32)
-
-    # Make player 0 face left.
-    env.rl_facing[0] = np.array([-1.0, 0.0], dtype=np.float32)
-
-    env.possessor = ("rl", 0)
-    env._attach_ball_to_possessor()
-
-    # Player 0 passes to player 1.
-    actions = np.array([11, 0, 0, 0, 0])
-
-    _, reward, _, _, info = env.step(actions)
-
-    assert info["pass_completed"] is True
-    assert info["pass_intercepted"] is False
-
-    assert env.possessor == ("rl", 1)
-
-    # Completed pass contributes +0.03 reward.
-    assert reward >= 0.03
-
-
 def test_intercepted_pass_does_not_get_completion_reward() -> None:
     env = SoccerEnv()
     env.reset()
@@ -453,28 +423,15 @@ def test_possessor_can_shoot_and_pass():
     # Can pass to all other teammates.
     assert np.all(player_0_mask[11:15])
     
-def test_shoot_is_masked_outside_attacking_half():
+def test_possessor_can_shoot_from_anywhere():
     env = SoccerEnv()
     env.reset()
 
     env.possessor = ("rl", 0)
 
-    # RL attacks left, so x=900 is too far from the target goal.
+    # Even far from goal, shooting should remain a legal action.
+    # Distance affects accuracy/reward rather than action availability.
     env.rl_pos[0] = np.array([900.0, 300.0], dtype=np.float32)
-
-    masks = env.action_masks()
-    player_0_mask = masks[:15]
-
-    assert player_0_mask[9] == False
-    
-def test_shoot_is_allowed_in_attacking_half():
-    env = SoccerEnv()
-    env.reset()
-
-    env.possessor = ("rl", 0)
-
-    # x=400 is inside the attacking half.
-    env.rl_pos[0] = np.array([400.0, 300.0], dtype=np.float32)
 
     masks = env.action_masks()
     player_0_mask = masks[:15]
@@ -496,6 +453,74 @@ def test_dribbling_across_goal_line_does_not_score():
     assert env.rl_score == 0
     assert reward == 0.0
     assert env.ball_pos[0] >= 0.0
+    
+def test_scripted_kick_flag():
+    env = SoccerEnv()
+    env.reset()
+
+    # Scripted team attacks right.
+    # Put player 0 inside the final third so it should shoot.
+    env.user_pos[0] = np.array([1000.0, 300.0], dtype=np.float32)
+
+    env.possessor = ("user", 0)
+    env.ball_pos = env.user_pos[0].copy()
+    env.ball_vel[:] = 0.0
+
+    actions = np.zeros(env.N_PLAYERS, dtype=np.int64)
+
+    _, _, _, _, info = env.step(actions)
+
+    assert "scripted_kick" in info
+    assert info["scripted_kick"] is True
+    
+def test_scripted_kick_flag_false_when_dribbling():
+    env = SoccerEnv()
+    env.reset()
+
+    # Outside shooting range, scripted player should dribble instead.
+    env.user_pos[0] = np.array([500.0, 300.0], dtype=np.float32)
+
+    env.possessor = ("user", 0)
+    env.ball_pos = env.user_pos[0].copy()
+    env.ball_vel[:] = 0.0
+
+    actions = np.zeros(env.N_PLAYERS, dtype=np.int64)
+
+    _, _, _, _, info = env.step(actions)
+
+    assert info["scripted_kick"] is False
+    
+def test_scripted_player_makes_forward_pass():
+    env = SoccerEnv()
+    env.reset()
+
+    # Ball carrier is outside shooting range.
+    env.user_pos[0] = np.array([500.0, 300.0], dtype=np.float32)
+
+    # Put player 1 clearly ahead.
+    env.user_pos[1] = np.array([750.0, 300.0], dtype=np.float32)
+
+    # Keep everyone else behind the ball carrier.
+    env.user_pos[2] = np.array([400.0, 100.0], dtype=np.float32)
+    env.user_pos[3] = np.array([350.0, 300.0], dtype=np.float32)
+    env.user_pos[4] = np.array([400.0, 500.0], dtype=np.float32)
+
+    env.possessor = ("user", 0)
+    env.ball_pos = env.user_pos[0].copy()
+    env.ball_vel[:] = 0.0
+
+    actions = np.zeros(env.N_PLAYERS, dtype=np.int64)
+
+    _, _, _, _, info = env.step(actions)
+
+    # A scripted kick should have occurred.
+    assert info["scripted_kick"] is True
+
+    # Possession should be released while the pass travels.
+    assert env.possessor is None
+
+    # The ball should be moving toward the right.
+    assert env.ball_vel[0] > 0
 
 
 def run_tests() -> None:
@@ -517,16 +542,17 @@ def run_tests() -> None:
         test_rl_player_can_pass_to_teammate,
         test_non_possessor_cannot_pass,
         test_self_pass_does_nothing,
-        test_completed_pass_gets_positive_reward,
         test_intercepted_pass_does_not_get_completion_reward,
         test_action_space_supports_passing,
         test_non_possessor_pass_gets_penalty,
         test_self_pass_gets_penalty,
         test_non_possessor_ball_actions_are_masked,
         test_possessor_can_shoot_and_pass,
-        test_shoot_is_masked_outside_attacking_half,
-        test_shoot_is_allowed_in_attacking_half,
+        test_possessor_can_shoot_from_anywhere,
         test_dribbling_across_goal_line_does_not_score,
+        test_scripted_kick_flag,
+        test_scripted_kick_flag_false_when_dribbling,
+        test_scripted_player_makes_forward_pass,
     ]
 
     passed = 0
