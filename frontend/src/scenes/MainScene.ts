@@ -87,6 +87,40 @@ export class MainScene extends Phaser.Scene {
         this.scoreText.setText(`${this.score.user} - ${this.score.rl}`);
     }
 
+    private getRandomizedRLOpponentPositions() {
+        const positions = formationToWorldPositions(
+            ONE_TWO_ONE,
+            'right'
+        ).map(pos => ({
+            x: pos.x,
+            y: pos.y
+        }));
+
+        // Randomize which RL player gets each formation slot.
+        for (let i = positions.length - 1; i > 0; i--) {
+            const j = Math.floor(
+                Math.random() * (i + 1)
+            );
+
+            [positions[i], positions[j]] =
+                [positions[j], positions[i]];
+        }
+
+        // Match training-time ±75px starting-position jitter.
+        return positions.map(pos => ({
+            x: Phaser.Math.Clamp(
+                pos.x + Phaser.Math.FloatBetween(-75, 75),
+                0,
+                1200
+            ),
+            y: Phaser.Math.Clamp(
+                pos.y + Phaser.Math.FloatBetween(-75, 75),
+                0,
+                600
+            )
+        }));
+    }
+
     private resetKickoff() {
         // Reset ball
         this.ball.setPosition(600, 300);
@@ -113,10 +147,7 @@ export class MainScene extends Phaser.Scene {
         }
 
         // Reset RL team
-        const opponentPositions = formationToWorldPositions(
-            ONE_TWO_ONE,
-            'right'
-        );
+        const opponentPositions = this.getRandomizedRLOpponentPositions();
 
         for (let i = 0; i < this.opponents.length; i++) {
             this.opponents[i].setPosition(
@@ -204,16 +235,96 @@ export class MainScene extends Phaser.Scene {
         }
     }
 
+    private enforceFreeBallBounds() {
+        // Possessed ball is handled by updateBallFollow().
+        if (this.possessor !== null) {
+            return;
+        }
+
+        const inGoalMouth =
+            this.ball.y >= 255 &&
+            this.ball.y <= 345;
+
+        // Top wall
+        if (this.ball.y < 0) {
+            this.ball.y = 0;
+
+            if (this.ball.body.velocity.y < 0) {
+                this.ball.body.setVelocityY(
+            -this.ball.body.velocity.y
+                );
+            }
+        }
+
+        // Bottom wall
+        if (this.ball.y > 600) {
+            this.ball.y = 600;
+
+            if (this.ball.body.velocity.y > 0) {
+                this.ball.body.setVelocityY(
+                    -this.ball.body.velocity.y
+                );
+            }
+        }
+
+        // Left/right walls should only be open at the goal mouth.
+        if (!inGoalMouth) {
+            if (this.ball.x < 0) {
+                this.ball.x = 0;
+
+                if (this.ball.body.velocity.x < 0) {
+                    this.ball.body.setVelocityX(
+                        -this.ball.body.velocity.x
+                    );
+                }
+            }
+
+            if (this.ball.x > 1200) {
+                this.ball.x = 1200;
+
+                if (this.ball.body.velocity.x > 0) {
+                    this.ball.body.setVelocityX(
+                        -this.ball.body.velocity.x
+                    );
+                }
+            }
+        }
+    }
+
     private updateBallFollow() {
         if (this.possessor === null) {
             return;
         }
 
         const offset = 15;
-        this.ball.setPosition(
-            this.possessor.x + this.possessor.facing.x * offset,
-            this.possessor.y + this.possessor.facing.y * offset
+
+        const attachedX =
+            this.possessor.x +
+            this.possessor.facing.x * offset;
+
+        const attachedY =
+            this.possessor.y +
+            this.possessor.facing.y * offset;
+
+        // Match the training environment:
+        // a possessed ball stays inside the pitch.
+        const clampedX = Phaser.Math.Clamp(
+            attachedX,
+            0,
+            1200
         );
+
+        const clampedY = Phaser.Math.Clamp(
+            attachedY,
+            0,
+            600
+        );
+
+        this.ball.setPosition(
+            clampedX,
+            clampedY
+        );
+
         this.ball.body.setVelocity(0, 0);
     }
 
@@ -258,8 +369,8 @@ export class MainScene extends Phaser.Scene {
                 this.opponents,
                 this.ball,
                 this.possessor,
-                this.score.user,
                 this.score.rl,
+                this.score.user,
                 this.timeRemaining
             );
 
@@ -541,23 +652,62 @@ export class MainScene extends Phaser.Scene {
         this.cameras.main.setBounds(-60, 0, 1320, 600);
 
         // Team creation, with different players
-        const startingPositions = formationToWorldPositions(this.chosenFormation, 'left');
+        // Create user team
+        const startingPositions =
+            formationToWorldPositions(
+                this.chosenFormation,
+                'left'
+            );
 
         startingPositions.forEach((pos, index) => {
-            const player = new Player(this, pos.x, pos.y, 0xffffff);
+            const player = new Player(
+                this,
+                pos.x,
+                pos.y,
+                0xffffff
+            );
+
+            // User attacks toward the right.
+            player.facing = { x: 1, y: 0 };
+
             this.team.push(player);
 
-            const name = this.squad[index]?.name ?? `Player ${index + 1}`;
-            const label = this.add.text(pos.x, pos.y - 25, name, { fontSize: '12px', color: '#ffffff' }).setOrigin(0.5, 1);
+            const name =
+                this.squad[index]?.name ??
+                `Player ${index + 1}`;
+
+            const label = this.add.text(
+                pos.x,
+                pos.y - 25,
+                name,
+                {
+                    fontSize: '12px',
+                    color: '#ffffff'
+                }
+            ).setOrigin(0.5, 1);
+
             this.nameLabels.push(label);
         });
 
         this.player = this.team[0];
 
-        const opponentPositions = formationToWorldPositions(ONE_TWO_ONE, 'right');
+
+        // Create RL team using randomized training-style positions
+        const opponentPositions =
+            this.getRandomizedRLOpponentPositions();
 
         for (const pos of opponentPositions) {
-            this.opponents.push(new Player(this, pos.x, pos.y, 0xff0000));
+            const opponent = new Player(
+                this,
+                pos.x,
+                pos.y,
+                0xff0000
+            );
+
+            // RL attacks toward the left.
+            opponent.facing = { x: -1, y: 0 };
+
+            this.opponents.push(opponent);
         }
 
         // Create the ball: black circle with a bouncy, drag-slowed physics body
@@ -567,7 +717,7 @@ export class MainScene extends Phaser.Scene {
         this.ball.body.setCollideWorldBounds(false);
         this.ball.body.setBounce(1);
         this.ball.body.setDamping(true);
-        this.ball.body.setDrag(0.5);
+        this.ball.body.setDrag(0.434388);
 
         const wallThickness = 20;
 
@@ -621,6 +771,7 @@ export class MainScene extends Phaser.Scene {
         this.updateControlledPlayer();
         this.updatePossession();
         this.updateBallFollow();
+        this.enforceFreeBallBounds();
         void this.updateRLPolicy(_time);
 
         // Update time
