@@ -27,6 +27,8 @@ export class MainScene extends Phaser.Scene {
     private nameLabels: Phaser.GameObjects.Text[] = [];
     private possessor: Player | null = null;
 
+    private possessionLockedUntil = 0;
+
     private rlActions: number[] = [0, 0, 0, 0, 0];
     private lastRLDecisionTime = 0;
     private rlInferenceRunning = false;
@@ -127,6 +129,7 @@ export class MainScene extends Phaser.Scene {
         this.ball.body.setVelocity(0, 0);
         this.possessor = null;
         this.pendingPass = null;
+        this.possessionLockedUntil = 0;
 
         // Reset user team to selected formation
         const userPositions = formationToWorldPositions(
@@ -205,10 +208,66 @@ export class MainScene extends Phaser.Scene {
         }
     }
 
+    private getRosterPlayer(player: Player): RosterPlayer | undefined {
+        const index = this.team.indexOf(player);
+
+        if (index === -1) {
+            return undefined;
+        }   
+
+        return this.squad[index];
+    }
+
+    private getUserMoveSpeed(player: Player): number {
+        const rosterPlayer = this.getRosterPlayer(player);
+
+        // 75 is the neutral/default pace.
+        const pace = Phaser.Math.Clamp(
+            rosterPlayer?.pace ?? 75,
+            0,
+            100
+        );
+
+        // Examples:
+        // 60 pace -> 175 px/s
+        // 75 pace -> 200 px/s
+        // 90 pace -> 225 px/s
+        return Phaser.Math.Clamp(
+            200 + (pace - 75) * (5 / 3),
+            150,
+            240
+        );
+    }
+
+    private getUserKickSpeed(player: Player): number {
+        const rosterPlayer = this.getRosterPlayer(player);
+
+        // 75 is the neutral/default shot rating.
+        const shot = Phaser.Math.Clamp(
+            rosterPlayer?.shot ?? 75,
+            0,
+            100
+        );
+
+        // 75 shot -> 400 px/s
+        //  Higher-rated shooters hit harder.
+        return Phaser.Math.Clamp(
+            400 + (shot - 75) * 2,
+            300,
+            450
+        );
+    }
+
     private updatePossession() {
         if (this.possessor !== null) {
             return;
             // Ball is already taken, return. This will change later
+        }
+
+        // After a kick/pass, give the ball time to leave the player's
+        // pickup radius before possession can be acquired again.
+        if (this.time.now < this.possessionLockedUntil) {
+            return;
         }
 
         const pickupRange = 20;
@@ -458,6 +517,7 @@ export class MainScene extends Phaser.Scene {
 
         // Release the ball.
         this.possessor = null;
+        this.possessionLockedUntil = this.time.now + 100;
 
         this.ball.body.setVelocity(
             (dx / magnitude) * this.KICK_SPEED,
@@ -533,6 +593,7 @@ export class MainScene extends Phaser.Scene {
 
         // Release possession before kicking.
         this.possessor = null;
+        this.possessionLockedUntil = this.time.now + 100;
 
         this.ball.body.setVelocity(
             (dx / magnitude) * this.KICK_SPEED,
@@ -799,25 +860,43 @@ export class MainScene extends Phaser.Scene {
         this.timerText.setText(`${minutes}:${seconds.toString().padStart(2, '0')}`);
 
         // Movement and Direction (arrow keys)
+        const moveSpeed = this.getUserMoveSpeed(this.player);
+
+        let moveX = 0;
+        let moveY = 0;
+
         if (this.cursors.left.isDown) {
-            this.player.body.setVelocityX(-200);
-            this.player.facing.x = -1;
+            moveX = -1;
         } else if (this.cursors.right.isDown) {
-            this.player.body.setVelocityX(200);
-            this.player.facing.x = 1;
-        } else {
-            this.player.body.setVelocityX(0);
+            moveX = 1;
         }
 
         if (this.cursors.up.isDown) {
-            this.player.body.setVelocityY(-200);
-            this.player.facing.y = -1;
+            moveY = -1;
         } else if (this.cursors.down.isDown) {
-            this.player.body.setVelocityY(200);
-            this.player.facing.y = 1;
-        } else {
-            this.player.body.setVelocityY(0);
+            moveY = 1;
         }
+
+        // Normalize diagonal movement so diagonal isn't faster.
+        if (moveX !== 0 || moveY !== 0) {
+            const magnitude = Math.sqrt(
+                moveX * moveX +
+                moveY * moveY
+            );
+
+            moveX /= magnitude;
+            moveY /= magnitude;
+
+            this.player.facing = {
+                x: moveX,
+                y: moveY
+            };
+        }
+
+        this.player.body.setVelocity(
+            moveX * moveSpeed,
+            moveY * moveSpeed
+        );
 
 
         // Kicking Mechanic
@@ -826,13 +905,14 @@ export class MainScene extends Phaser.Scene {
             const kickRange = 40;
 
             if (dist < kickRange) {
-                const kickSpeed = 400;
+                const kickSpeed = this.getUserKickSpeed(this.player);
 
                 const magnitude = Math.sqrt(this.player.facing.x ** 2 + this.player.facing.y ** 2);
                 const normalizedX = this.player.facing.x / magnitude;
                 const normalizedY = this.player.facing.y / magnitude;
                 
                 this.possessor = null;
+                this.possessionLockedUntil = this.time.now + 100;
                 this.ball.body.setVelocity(normalizedX * kickSpeed, normalizedY * kickSpeed);
             }
         }
