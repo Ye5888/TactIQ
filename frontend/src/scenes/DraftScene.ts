@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { type RosterPlayer } from '../data/roster';
 import { Formation } from '../data/formations';
+import { API_URL } from '../config';
 
 
 export class DraftScene extends Phaser.Scene {
@@ -25,7 +26,7 @@ export class DraftScene extends Phaser.Scene {
             shot: number,
         }
 
-        const response = await fetch("http://127.0.0.1:8000/players");
+        const response = await fetch(`${API_URL}/players`);
         const players: PlayerDoc[] = await response.json();
 
         loadingText.destroy();

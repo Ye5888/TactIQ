@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { API_URL } from '../config';
 
 export class FormationSelectScene extends Phaser.Scene {
     constructor() {
@@ -14,7 +15,7 @@ export class FormationSelectScene extends Phaser.Scene {
 
         const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
 
-        const response = await fetch("http://127.0.0.1:8000/formations");
+        const response = await fetch(`${API_URL}/formations`);
         const formations: FormationDoc[] = await response.json();
 
         loadingText.destroy();

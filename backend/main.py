@@ -53,9 +53,14 @@ async def lifespan(app: FastAPI):
 # Dictates the app's lifecycle
 app = FastAPI(lifespan=lifespan)
 
+frontend_origin = os.getenv(
+    "FRONTEND_ORIGIN",
+    "http://localhost:5173"
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[frontend_origin],
     allow_methods=["*"],
     allow_headers=["*"],
 )
