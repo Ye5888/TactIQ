@@ -39,4 +39,5 @@ rl/runs/
 
 # ML model artifacts (if large — decide based on file size)
 *.onnx
+!frontend/public/models/tactiq_v1.onnx
 *.pth
