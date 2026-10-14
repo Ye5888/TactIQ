@@ -11,33 +11,8 @@ export async function loadRLModel() {
         "/models/tactiq_v1.onnx"
     );
 
-    console.log("TactIQ ONNX model loaded");
-    console.log("Inputs:", session.inputNames);
-    console.log("Outputs:", session.outputNames);
 
     return session;
-}
-
-export async function testRLModel() {
-    const model = await loadRLModel();
-
-    // Same shape we used during Python export: (1, 37)
-    const observation = new Float32Array(37);
-
-    const inputTensor = new ort.Tensor(
-        "float32",
-        observation,
-        [1, 37]
-    );
-
-    const results = await model.run({
-        observation: inputTensor,
-    });
-
-    const logits = results.action_logits;
-
-    console.log("Output dimensions:", logits.dims);
-    console.log("Number of logits:", logits.data.length);
 }
 
 export async function predictActions(

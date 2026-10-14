@@ -524,10 +524,6 @@ export class MainScene extends Phaser.Scene {
             (dy / magnitude) * this.KICK_SPEED
         );
 
-        // TEMP for testing.
-        console.log(
-            `RL PASS: ${passerIndex} -> ${receiverIndex}`
-        );
     }
 
     private moveRLReceiverTowardBall(player: Player) {
@@ -598,17 +594,6 @@ export class MainScene extends Phaser.Scene {
         this.ball.body.setVelocity(
             (dx / magnitude) * this.KICK_SPEED,
             (dy / magnitude) * this.KICK_SPEED
-        );
-
-        // TEMP: useful while testing.
-        console.log(
-            "RL SHOT",
-            "from:",
-            player.x,
-            player.y,
-            "target:",
-            targetX,
-            targetY
         );
     }
 
