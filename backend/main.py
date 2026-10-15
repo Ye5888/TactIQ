@@ -89,13 +89,13 @@ async def get_player(player_id : str):
 # is a Pydantic model, FastAPI is able to clean the data
 # and then create an actual Player object out of it called player
 # If the json data isn't the correct format then it is rejected    
-@app.post("/players")
+""" @app.post("/players")
 async def create_player(player : Player):
     await player.insert()
     
-    return player
+    return player """
 
-@app.put("/players/{player_id}")
+""" @app.put("/players/{player_id}")
 async def update_player(player_id : str, player: Player):
     specific_player = await Player.get(player_id)
     if specific_player is None:
@@ -105,15 +105,15 @@ async def update_player(player_id : str, player: Player):
     # in the JSON request
     await specific_player.set(player.model_dump(exclude={"id"})) 
     
-    return specific_player
+    return specific_player """
 
-@app.delete("/players/{player_id}")
+""" @app.delete("/players/{player_id}")
 async def delete_player(player_id : str):
     specific_player = await Player.get(player_id)
     if specific_player is None:
         raise HTTPException(status_code=404, detail=f"No player found with id {player_id}")
     await specific_player.delete()
-    return {"message": f"Deleted player {player_id}"}
+    return {"message": f"Deleted player {player_id}"} """
 
 
 
@@ -133,7 +133,7 @@ async def get_formation(formation_id : str):
     
     return specific_formation
 
-@app.post("/formations")
+""" @app.post("/formations")
 async def create_formation(formation : Formation):
     await formation.insert()
     
@@ -160,3 +160,4 @@ async def delete_formation(formation_id : str):
     await specific_formation.delete()
     return {"message" : f"Delete formation {formation_id}"}
     
+ """
