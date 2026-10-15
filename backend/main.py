@@ -161,3 +161,17 @@ async def delete_formation(formation_id : str):
     return {"message" : f"Delete formation {formation_id}"}
     
  """
+  
+@app.get("/draft/players")
+async def get_draft_players():
+    players = await Player.aggregate([
+        {"$sample": {"size": 10}},
+        {"$project": {
+            "_id": 0,
+            "name": 1,
+            "pace": 1,
+            "shot": 1
+        }}
+    ]).to_list()
+
+    return players

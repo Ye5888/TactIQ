@@ -13,7 +13,8 @@ export class DraftScene extends Phaser.Scene {
     }
 
     init(data: { formation: Formation }) {
-        this.formation = data.formation
+        this.formation = data.formation;
+        this.picks = [];
     }
 
     async create() {
@@ -26,7 +27,7 @@ export class DraftScene extends Phaser.Scene {
             shot: number,
         }
 
-        const response = await fetch(`${API_URL}/players`);
+        const response = await fetch(`${API_URL}/draft/players`);
         const players: PlayerDoc[] = await response.json();
 
         loadingText.destroy();
