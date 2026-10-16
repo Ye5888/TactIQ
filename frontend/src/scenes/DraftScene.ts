@@ -1,16 +1,14 @@
 import Phaser from 'phaser';
-import { type RosterPlayer } from '../data/roster';
-import { Formation } from '../data/formations';
+import type { RosterPlayer } from '../data/roster';
+import type { Formation } from '../data/formations';
 import { API_URL } from '../config';
-
+import { validateDraftPlayers } from '../data/validateApi';
 
 export class DraftScene extends Phaser.Scene {
     private formation!: Formation;
     private picks: RosterPlayer[] = [];
 
-    constructor() {
-        super('DraftScene');
-    }
+    constructor() { super('DraftScene'); }
 
     init(data: { formation: Formation }) {
         this.formation = data.formation;
@@ -18,40 +16,46 @@ export class DraftScene extends Phaser.Scene {
     }
 
     async create() {
-        const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
+        const loading = this.add.text(400, 300, 'Loading...', {
+            fontSize: '28px', color: '#ffffff'
+        }).setOrigin(0.5);
+        const controller = new AbortController();
+        this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => controller.abort());
 
-        type PlayerDoc = {
-            name: string,
-            pace: number,
-            shot: number,
-        }
+        try {
+            const response = await fetch(`${API_URL}/draft/players`, { signal: controller.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const players = validateDraftPlayers(await response.json());
+            if (!this.scene.isActive()) return;
 
-        const response = await fetch(`${API_URL}/draft/players`);
-        const players: PlayerDoc[] = await response.json();
+            loading.destroy();
+            players.forEach((candidate, index) => {
+                const label = this.add.text(400, 100 + index * 40,
+                    `${candidate.name}  (pace ${candidate.pace}, shot ${candidate.shot})`,
+                    { fontSize: '20px', color: '#ffffff' }
+                ).setOrigin(0.5, 0).setInteractive({ useHandCursor: true });
 
-        loadingText.destroy();
+                label.on('pointerdown', () => {
+                    if (this.picks.includes(candidate) || this.picks.length >= 5) return;
+                    this.picks.push(candidate);
+                    label.setColor('#888888').disableInteractive();
 
-        players.forEach((candidate, index) => {
-            const y = 100 + index * 40;
-            const label = this.add.text(400, y, `${candidate.name}  (pace ${candidate.pace}, shot ${candidate.shot})`, {
-                fontSize: '20px',
-                color: '#ffffff',
-            }).setOrigin(0.5, 0);
-
-            label.setInteractive({ useHandCursor: true });
-            label.on('pointerdown', () => {
-                if (this.picks.includes(candidate)) {
-                    return;
-                }
-
-                this.picks.push(candidate);
-                label.setColor('#888888');
-                label.disableInteractive();
-
-                if (this.picks.length === 5) {
-                    this.scene.start('MainScene', { formation: this.formation, squad: this.picks });
-                }
+                    if (this.picks.length === 5) {
+                        this.scene.start('MainScene', {
+                            formation: this.formation,
+                            squad: [...this.picks]
+                        });
+                    }
+                });
             });
-        });
+        } catch (error) {
+            if (!this.scene.isActive() || controller.signal.aborted) return;
+            console.error('Failed to load draft:', error);
+            loading.setText('Failed to load players');
+            this.add.text(400, 360, 'Retry', {
+                fontSize: '24px', color: '#ffff00'
+            }).setOrigin(0.5).setInteractive({ useHandCursor: true })
+              .on('pointerdown', () => this.scene.restart());
+        }
     }
 }

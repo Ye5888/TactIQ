@@ -32,6 +32,8 @@ export class MainScene extends Phaser.Scene {
     private rlActions: number[] = [0, 0, 0, 0, 0];
     private lastRLDecisionTime = 0;
     private rlInferenceRunning = false;
+    private rlFailureReported = false;
+    private sceneGeneration = 0;
     
     private readonly RL_DECISION_INTERVAL = 100; // milliseconds
     private readonly RL_SPEED = 150;
@@ -49,12 +51,22 @@ export class MainScene extends Phaser.Scene {
     }
 
     init(data: { formation?: Formation; squad?: RosterPlayer[] }) {
-        if (data.formation) {
-            this.chosenFormation = data.formation;
-        }
-        if (data.squad) {
-            this.squad = data.squad;
-        }
+        this.chosenFormation = data.formation ?? ONE_TWO_ONE;
+        this.squad = data.squad ?? [];
+        this.team = [];
+        this.opponents = [];
+        this.nameLabels = [];
+        this.score = { user: 0, rl: 0 };
+        this.timeRemaining = 120;
+        this.matchOver = false;
+        this.possessor = null;
+        this.pendingPass = null;
+        this.possessionLockedUntil = 0;
+        this.rlActions = [0, 0, 0, 0, 0];
+        this.lastRLDecisionTime = 0;
+        this.rlInferenceRunning = false;
+        this.rlFailureReported = false;
+        this.sceneGeneration++;
     }
 
     private createGoalZone(
@@ -419,8 +431,10 @@ export class MainScene extends Phaser.Scene {
             return;
         }
 
+        if (this.rlFailureReported || this.matchOver) return;
         this.lastRLDecisionTime = time;
         this.rlInferenceRunning = true;
+        const generation = this.sceneGeneration;
 
         try {
             const observation = buildObservation(
@@ -438,14 +452,22 @@ export class MainScene extends Phaser.Scene {
                 this.possessor
             );
 
-            this.rlActions = await predictActions(
-                observation,
-                actionMask
-            );
+            const actions = await predictActions(observation, actionMask);
+            if (generation !== this.sceneGeneration || !this.scene.isActive() || this.matchOver) return;
+            if (actions.length !== 5 || actions.some(action => !Number.isInteger(action) || action < 0 || action > 14)) {
+                throw new Error('Invalid RL action output');
+            }
+            this.rlActions = actions;
         } catch (error) {
+            if (generation !== this.sceneGeneration || !this.scene.isActive()) return;
             console.error("RL inference failed:", error);
+            this.rlFailureReported = true;
+            this.rlActions = [0, 0, 0, 0, 0];
+            this.add.text(400, 110, 'RL opponent unavailable - refresh to retry', {
+                fontSize: '18px', color: '#ffff00'
+            }).setOrigin(0.5).setScrollFactor(0);
         } finally {
-            this.rlInferenceRunning = false;
+            if (generation === this.sceneGeneration) this.rlInferenceRunning = false;
         }
     }
 
@@ -663,7 +685,9 @@ export class MainScene extends Phaser.Scene {
     }
 
     private endMatch() {
+        this.sceneGeneration++;
         this.player.body.setVelocity(0, 0);
+        for (const teammate of this.team) teammate.body.setVelocity(0, 0);
         this.ball.body.setVelocity(0, 0);
         for (const opponent of this.opponents) {
             opponent.body.setVelocity(0, 0);
@@ -813,6 +837,7 @@ export class MainScene extends Phaser.Scene {
     
 
     update(_time: number, delta: number) {
+        if (this.matchOver) return;
         // Update the nearest player
         this.updateControlledPlayer();
         this.updatePossession();
@@ -834,10 +859,6 @@ export class MainScene extends Phaser.Scene {
         if (this.timeRemaining === 0 && !this.matchOver) {
             this.matchOver = true;
             this.endMatch();
-        }
-
-        if (this.matchOver) {
-            return;
         }
 
         const minutes = Math.floor(this.timeRemaining / 60);
