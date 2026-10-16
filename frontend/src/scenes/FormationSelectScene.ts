@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { API_URL } from '../config';
 import { validateFormations } from '../data/validateApi';
+import { fetchValidated } from '../data/fetchApi';
 
 export class FormationSelectScene extends Phaser.Scene {
     constructor() { super('FormationSelectScene'); }
@@ -13,9 +14,7 @@ export class FormationSelectScene extends Phaser.Scene {
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => controller.abort());
 
         try {
-            const response = await fetch(`${API_URL}/formations`, { signal: controller.signal });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const formations = validateFormations(await response.json());
+            const formations = await fetchValidated(`${API_URL}/formations`, validateFormations, controller.signal);
             if (!this.scene.isActive()) return;
 
             loading.destroy();
