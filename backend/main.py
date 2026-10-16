@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from beanie import init_beanie, Document
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 class Player(Document):
+    source_id: int | None = None
     name: str
     pace: int
     shot: int
@@ -30,24 +31,33 @@ class Formation(Document):
     
     class Settings:
         name = "formations"
-        
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    
-    # Client is the line between the cluster (reference by MONGODB_URI) and our code
-    client = AsyncIOMotorClient(os.getenv("MONGODB_URI"))
-    
-    # Beanie is what translates between our code and the database - knows which is our
-    # through client.tactiq, and document_models provides the models for documents
-    await init_beanie(database=client.tactiq, document_models=[Player, Formation])
+
+    # Client is the connection between our application and the MongoDB cluster,
+    # which we identify using the MONGODB_URI environment variable.
+    # AsyncMongoClient lets us interact with MongoDB asynchronously.
+    client = AsyncMongoClient(os.getenv("MONGODB_URI"))
+
+    # Beanie is what translates between our Python models and MongoDB documents.
+    # client.tactiq specifies which database we're using, while document_models
+    # tells Beanie which Python classes correspond to collections in that database.
+    await init_beanie(
+        database=client.tactiq,
+        document_models=[Player, Formation]
+    )
+
+    # yield pauses the lifespan function while FastAPI handles requests.
+    # The MongoDB client stays available throughout the application's lifetime.
+    # @asynccontextmanager allows FastAPI to use this function to manage startup
+    # and shutdown.
     yield
-    
-    # yield pauses the function, leaving client alive and open for as long
-    # as nothing runs past that point. @asynccontextmanager converts that
-    # yield-based function into the proper shape FastAPI needs, so it can
-    # actually be plugged in via lifespan=lifespan
+
+    # Once FastAPI shuts down, execution resumes after yield.
+    # We close the MongoDB client to release its connections and resources.
+    await client.close()
     
 
 # Dictates the app's lifecycle

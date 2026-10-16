@@ -21,7 +21,6 @@ export class DraftScene extends Phaser.Scene {
         const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
 
         type PlayerDoc = {
-            _id: string,
             name: string,
             pace: number,
             shot: number,
