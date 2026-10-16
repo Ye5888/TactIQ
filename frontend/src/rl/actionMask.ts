@@ -1,4 +1,4 @@
-import { Player } from "../entities/Player";
+import type { Player } from "../entities/Player";
 
 const N_PLAYERS = 5;
 const N_ACTIONS_PER_PLAYER = 15;

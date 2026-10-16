@@ -1,4 +1,4 @@
-import { Player } from "../entities/Player";
+import type { Player } from "../entities/Player";
 
 const WIDTH = 1200;
 const HEIGHT = 600;

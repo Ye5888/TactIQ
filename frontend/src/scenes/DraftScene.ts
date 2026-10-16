@@ -3,6 +3,7 @@ import type { RosterPlayer } from '../data/roster';
 import type { Formation } from '../data/formations';
 import { API_URL } from '../config';
 import { validateDraftPlayers } from '../data/validateApi';
+import { fetchValidated } from '../data/fetchApi';
 
 export class DraftScene extends Phaser.Scene {
     private formation!: Formation;
@@ -23,9 +24,7 @@ export class DraftScene extends Phaser.Scene {
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => controller.abort());
 
         try {
-            const response = await fetch(`${API_URL}/draft/players`, { signal: controller.signal });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const players = validateDraftPlayers(await response.json());
+            const players = await fetchValidated(`${API_URL}/draft/players`, validateDraftPlayers, controller.signal);
             if (!this.scene.isActive()) return;
 
             loading.destroy();
