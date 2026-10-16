@@ -14,7 +14,7 @@ Runtime Web**.
 
 ## Project Status
 
-TactIQ has a deployed frontend and backend, with final production verification, gameplay testing, and UI polish still in progress.
+**Status: Complete and deployed.** The core gameplay, backend, browser RL inference, production verification, and failure/retry testing are complete. Further UI work and exhaustive simulation parity are optional.
 
 - ✅ Formation selection and random draft: 10 player offers, pick 5
 - ✅ FC26 player dataset cleaned and imported into MongoDB Atlas (16,343 usable players)
@@ -37,10 +37,13 @@ TactIQ has a deployed frontend and backend, with final production verification, 
 - ✅ Client-side ONNX inference integrated into the Phaser match
 - ✅ PPO-controlled movement, shooting, passing, and receiving working
   in gameplay
-- 🚧 Final Python ↔ Phaser parity cleanup and edge-case testing
-- ⬜ Final UI/gameplay polish
 - ✅ Frontend deployed on Vercel; backend hosted on Render
-- 🚧 End-to-end production verification (including RL model loading)
+- ✅ End-to-end production match and RL inference manually verified
+- ✅ Formation and draft failure/retry handling and state-reset fixes
+- ✅ Automated API, recovery, and RL observation/action-mask regression tests
+- ✅ Frontend build and tests in GitHub Actions
+- ✅ Manual error/retry and restart smoke testing completed
+- ℹ️ Exhaustive Python ↔ Phaser behavioral parity and UI polish remain optional
 
 ## Gameplay
 
@@ -526,7 +529,7 @@ The backend should also be running because the formation-selection and draft sce
 
 For production, set `MONGODB_URI` and `FRONTEND_ORIGINS` on the backend, and `VITE_API_URL` on the frontend to the Render backend URL. The browser ONNX model must be available at `/models/tactiq_v1.onnx`.
 
-The code is merged into `main`, and Vercel has reported a successful deployment check. A complete live-site match and Render endpoint verification are still outstanding.
+The Render API and complete Vercel game flow have been manually verified: formation selection, drafting, RL opponent behavior, scoring, and match ending. Failure/Retry and restart behavior were also manually verified. The frontend tests and production build pass in GitHub Actions.
 
 ## Project Structure
 
@@ -547,7 +550,9 @@ TactIQ/
 │   │   ├── config.ts            # Backend API base URL
 │   │   ├── data/
 │   │   │   ├── formations.ts
-│   │   │   └── roster.ts
+│   │   │   ├── roster.ts
+│   │   │   ├── validateApi.ts   # API response validation
+│   │   │   └── fetchApi.ts      # HTTP errors and abort handling
 │   │   ├── entities/
 │   │   │   └── Player.ts
 │   │   ├── rl/
@@ -559,6 +564,7 @@ TactIQ/
 │   │   │   ├── DraftScene.ts
 │   │   │   └── MainScene.ts
 │   │   └── App.tsx
+│   ├── tests/                  # Request/retry and RL structure tests
 │   └── package.json
 │
 ├── rl/
@@ -570,6 +576,8 @@ TactIQ/
 │   ├── verify_onnx.py           # ONNX ↔ original policy verification
 │   └── requirements.txt
 │
+├── .github/workflows/
+│   └── frontend-ci.yml         # Frontend tests and production build
 ├── .gitignore
 └── README.md
 ```
@@ -594,19 +602,36 @@ project exports only the neural network’s raw policy logits to ONNX.
 Action masking and deterministic action selection are then implemented
 directly in TypeScript.
 
-## Current Limitations / Next Steps
+## Testing and Verification
 
-The core game and RL browser integration are functional. Remaining work
-is focused on finishing rather than adding major mechanics:
+Run frontend regression tests and the production build:
 
-- complete the final Python ↔ Phaser parity pass
-- run additional full-match and edge-case testing
-- remove temporary model/debug logging
-- polish game presentation and UI
-- verify the deployed Render API and complete a live Vercel match
-- confirm the ONNX model loads and inference works in production
-- handle API failures and empty draft results gracefully
-- update and maintain documentation as the game evolves
+```bash
+cd frontend
+npm ci
+npm test
+npm run build
+```
+
+The tests cover valid and malformed API data; empty responses; failed HTTP requests; network and JSON failures; aborted requests; and successful retry after failure. RL interface tests check the **37-element observation**, **75-element action mask**, score/time normalization, possession encoding, and legal shoot/pass/self-pass choices.
+
+GitHub Actions (`.github/workflows/frontend-ci.yml`) runs the frontend test suite and build automatically for pull requests to `main`.
+
+### Production smoke tests
+
+Manually verified on the deployed application:
+
+- Render responds with player draft and formation data
+- the Vercel frontend completes formation selection, five-player draft, and a full match
+- the browser ONNX opponent runs; scoring and the two-minute ending work
+- error messages and Retry controls recover after simulated backend failures
+- refreshing/restarting returns the game to a clean state
+
+These smoke tests and structural RL tests do **not** establish exhaustive numerical/behavioral parity between the Python training environment and Phaser.
+
+## Optional Future Improvements
+
+The planned project scope is complete. Potential non-blocking improvements include deeper Python ↔ Phaser physics parity tests, cross-browser endurance testing, and UI polish.
 
 ## Why TactIQ?
 
