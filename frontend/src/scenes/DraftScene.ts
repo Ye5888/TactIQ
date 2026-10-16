@@ -13,20 +13,20 @@ export class DraftScene extends Phaser.Scene {
     }
 
     init(data: { formation: Formation }) {
-        this.formation = data.formation
+        this.formation = data.formation;
+        this.picks = [];
     }
 
     async create() {
         const loadingText = this.add.text(400, 300, 'Loading...', { fontSize: '28px', color: '#ffffff' }).setOrigin(0.5);
 
         type PlayerDoc = {
-            _id: string,
             name: string,
             pace: number,
             shot: number,
         }
 
-        const response = await fetch(`${API_URL}/players`);
+        const response = await fetch(`${API_URL}/draft/players`);
         const players: PlayerDoc[] = await response.json();
 
         loadingText.destroy();
