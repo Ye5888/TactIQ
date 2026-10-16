@@ -1,5 +1,7 @@
 # TactIQ
 
+[Play TactIQ](https://tact-iq-beta.vercel.app/) · [Backend API](https://tactiq-3opz.onrender.com/docs)
+
 TactIQ is a browser-based 5-a-side futsal game where the player chooses
 a formation, drafts a squad, and plays a full two-minute match against a
 reinforcement-learning opponent.
@@ -12,9 +14,11 @@ Runtime Web**.
 
 ## Project Status
 
-TactIQ is in the final integration and polish stage.
+TactIQ has a deployed frontend and backend, with final production verification, gameplay testing, and UI polish still in progress.
 
-- ✅ Formation selection and five-player squad draft
+- ✅ Formation selection and random draft: 10 player offers, pick 5
+- ✅ FC26 player dataset cleaned and imported into MongoDB Atlas (16,343 usable players)
+- ✅ Drafted player pace and shooting ratings affect movement and kick speed
 - ✅ Full 5v5 Phaser match loop
 - ✅ Player movement, possession, dribbling, shooting, ball physics,
   walls, goals, scoring, timer, and win/loss flow
@@ -35,7 +39,8 @@ TactIQ is in the final integration and polish stage.
   in gameplay
 - 🚧 Final Python ↔ Phaser parity cleanup and edge-case testing
 - ⬜ Final UI/gameplay polish
-- ⬜ Production deployment
+- ✅ Frontend deployed on Vercel; backend hosted on Render
+- 🚧 End-to-end production verification (including RL model loading)
 
 ## Gameplay
 
@@ -44,12 +49,14 @@ A TactIQ match follows three scenes:
 ``` text
 Formation Select
       ↓
-Draft 5 Players
+10 Random Players → Choose 5
       ↓
 2-Minute 5v5 Match
       ↓
 Final Score / Result
 ```
+
+The draft requests 10 random players from MongoDB through `GET /draft/players`. After selecting five, the chosen squad is passed into the match. Player `pace` influences movement speed, and `shot` influences kick speed.
 
 The user controls the white team and attacks the right goal. The
 RL-controlled red team attacks the left goal.
@@ -110,7 +117,8 @@ client-side during the match.
 - FastAPI
 - MongoDB
 - Beanie ODM
-- Motor
+- PyMongo (`AsyncMongoClient`)
+- pandas (FC26 data preparation)
 
 ### Reinforcement Learning
 
@@ -327,36 +335,41 @@ decisions of the original PyTorch policy before browser integration.
 The FastAPI backend stores players and formations in MongoDB through
 Beanie.
 
-### Players
+### Players and draft
 
-``` text
-GET     /players
-GET     /players/{player_id}
-POST    /players
-PUT     /players/{player_id}
-DELETE  /players/{player_id}
+```text
+GET     /players                  # List players
+GET     /players/{player_id}      # Fetch a player by MongoDB ID
+GET     /draft/players            # Sample 10 random draft candidates
 ```
 
-A player currently contains:
-
-``` text
-name
-pace
-shot
-```
+A player document contains `name`, `pace`, and `shot`, plus an optional `source_id` that identifies the record in the FC26 dataset. The draft endpoint returns only `name`, `pace`, and `shot`; MongoDB's `$sample` selects the candidates.
 
 ### Formations
 
-``` text
+```text
 GET     /formations
 GET     /formations/{formation_id}
-POST    /formations
-PUT     /formations/{formation_id}
-DELETE  /formations/{formation_id}
 ```
 
-Each formation contains a name and a list of normalized `(x, y)`
-formation slots.
+Each formation contains a name and a list of normalized `(x, y)` formation slots. The `POST`, `PUT`, and `DELETE` routes for players and formations are currently disabled to avoid exposing unauthenticated database writes.
+
+## FC26 Player Data
+
+The backend's `tactiq.players` MongoDB Atlas collection has been populated with **16,343 usable FC26 outfield players**. The initial import reported **16,348 documents total**, including five pre-existing test records.
+
+- `backend/FC26_20250921.csv` — source dataset.
+- `backend/data_cleaning.py` — selects `player_id`, `short_name`, `pace`, and `shooting`; drops incomplete rows; writes `backend/players_cleaned.csv`.
+- `backend/import_players.py` — imports cleaned players in batches of 1,000, upserting by `source_id` to avoid duplicate imports.
+
+If setting up a **new or empty MongoDB database**, run these commands from `backend/` after configuring `MONGODB_URI`:
+
+```bash
+python data_cleaning.py
+python import_players.py
+```
+
+These scripts are **not** needed on every FastAPI startup or deployment. The running API reads the already-imported documents directly from MongoDB Atlas.
 
 ## Running Locally
 
@@ -370,7 +383,7 @@ You will need:
 - the trained RL checkpoint if you want to recreate the browser ONNX
   model
 
-Model artifacts are intentionally excluded from Git by `.gitignore`.
+RL training artifacts are excluded from Git. The browser ONNX model at `frontend/public/models/tactiq_v1.onnx` is explicitly allowed by `.gitignore` so it can be included in the frontend build.
 
 ### 1. Backend
 
@@ -388,6 +401,7 @@ Create `backend/.env`:
 
 ``` text
 MONGODB_URI=your-mongodb-connection-string
+FRONTEND_ORIGINS=http://localhost:5173,http://localhost:4173
 ```
 
 Start FastAPI:
@@ -483,9 +497,7 @@ The browser policy loader expects the model at:
 /models/tactiq_v1.onnx
 ```
 
-Because `*.onnx` and `rl/models/` are currently ignored by Git, this
-step is required after a clean clone unless the model is supplied
-through the deployment process.
+Generic `*.onnx` files and `rl/models/` are ignored by Git, but `frontend/public/models/tactiq_v1.onnx` is an exception. Ensure that this file is present when building the frontend; the browser loads it from `/models/tactiq_v1.onnx`.
 
 ### 5. Frontend
 
@@ -494,6 +506,7 @@ In another terminal:
 ``` bash
 cd frontend
 npm install
+# Optional: set VITE_API_URL=http://127.0.0.1:8000 in frontend/.env.local
 npm run dev
 ```
 
@@ -503,21 +516,35 @@ Vite normally serves the frontend at:
 http://localhost:5173
 ```
 
-The backend should also be running because the formation-selection and
-draft scenes fetch their data from FastAPI.
+The backend should also be running because the formation-selection and draft scenes fetch their data from FastAPI. If `VITE_API_URL` is not set, the frontend defaults to `http://127.0.0.1:8000`.
+
+## Deployment
+
+- **Frontend (Vercel):** https://tact-iq-beta.vercel.app/
+- **Backend (Render):** https://tactiq-3opz.onrender.com/
+- **Database:** MongoDB Atlas, `tactiq` database
+
+For production, set `MONGODB_URI` and `FRONTEND_ORIGINS` on the backend, and `VITE_API_URL` on the frontend to the Render backend URL. The browser ONNX model must be available at `/models/tactiq_v1.onnx`.
+
+The code is merged into `main`, and Vercel has reported a successful deployment check. A complete live-site match and Render endpoint verification are still outstanding.
 
 ## Project Structure
 
 ``` text
 TactIQ/
 ├── backend/
-│   ├── main.py                  # FastAPI app, Beanie models, CRUD routes
+│   ├── main.py                  # FastAPI app, Beanie models, read + draft routes
+│   ├── data_cleaning.py         # Clean FC26 dataset
+│   ├── import_players.py        # Upsert players into MongoDB Atlas
+│   ├── FC26_20250921.csv        # Raw FC26 dataset
+│   ├── players_cleaned.csv      # Prepared player data
 │   └── requirements.txt
 │
 ├── frontend/
 │   ├── public/
-│   │   └── models/              # Local/deployed ONNX model location
+│   │   └── models/              # Browser ONNX model (tactiq_v1.onnx)
 │   ├── src/
+│   │   ├── config.ts            # Backend API base URL
 │   │   ├── data/
 │   │   │   ├── formations.ts
 │   │   │   └── roster.ts
@@ -576,8 +603,10 @@ is focused on finishing rather than adding major mechanics:
 - run additional full-match and edge-case testing
 - remove temporary model/debug logging
 - polish game presentation and UI
-- finalize how the ONNX artifact is packaged for production
-- deploy the frontend and backend
+- verify the deployed Render API and complete a live Vercel match
+- confirm the ONNX model loads and inference works in production
+- handle API failures and empty draft results gracefully
+- update and maintain documentation as the game evolves
 
 ## Why TactIQ?
 
